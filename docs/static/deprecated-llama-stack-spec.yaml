@@ -23,21 +23,12 @@ components:
       properties:
         status:
           type: integer
-          description: HTTP status code
         title:
           type: string
-          description: >-
-            Error title, a short summary of the error which is invariant for an error
-            type
         detail:
           type: string
-          description: >-
-            Error detail, a longer human-readable description of the error
         instance:
           type: string
-          description: >-
-            (Optional) A URL which can be used to retrieve more information about
-            the specific occurrence of the error
       additionalProperties: false
       required:
         - status

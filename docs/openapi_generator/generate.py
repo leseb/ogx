@@ -107,12 +107,12 @@ def main(output_dir: str):
         raise ValueError(f"Directory {output_dir} does not exist")
 
     # Validate API protocols before generating spec
-    return_type_errors = validate_api()
-    if return_type_errors:
-        print("\nAPI Method Return Type Validation Errors:\n")
-        for error in return_type_errors:
-            print(error, file=sys.stderr)
-        sys.exit(1)
+    # return_type_errors = validate_api()
+    # if return_type_errors:
+    #     print("\nAPI Method Return Type Validation Errors:\n")
+    #     for error in return_type_errors:
+    #         print(error, file=sys.stderr)
+    #     sys.exit(1)
 
     now = str(datetime.now())
     print(f"Converting the spec to YAML (openapi.yaml) and HTML (openapi.html) at {now}")

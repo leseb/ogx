@@ -3039,14 +3039,12 @@ paths:
         default:
           $ref: '#/components/responses/DefaultError'
       tags:
-        - DatasetIO
+        - DatasetIOService
       summary: Append rows to a dataset.
       description: Append rows to a dataset.
       parameters:
         - name: dataset_id
           in: path
-          description: >-
-            The ID of the dataset to append the rows to.
           required: true
           schema:
             type: string
@@ -3061,7 +3059,7 @@ paths:
     get:
       responses:
         '200':
-          description: A PaginatedResponse.
+          description: OK
           content:
             application/json:
               schema:
@@ -3077,42 +3075,24 @@ paths:
         default:
           $ref: '#/components/responses/DefaultError'
       tags:
-        - DatasetIO
+        - DatasetIOService
       summary: >-
         Get a paginated list of rows from a dataset.
       description: >-
         Get a paginated list of rows from a dataset.
-
-        Uses offset-based pagination where:
-
-        - start_index: The starting index (0-based). If None, starts from beginning.
-
-        - limit: Number of items to return. If None or -1, returns all items.
-
-
-        The response includes:
-
-        - data: List of items for the current page.
-
-        - has_more: Whether there are more items available after this set.
       parameters:
         - name: dataset_id
           in: path
-          description: >-
-            The ID of the dataset to get the rows from.
           required: true
           schema:
             type: string
         - name: start_index
           in: query
-          description: >-
-            Index into dataset for the first row to get. Get all rows if None.
           required: false
           schema:
             type: integer
         - name: limit
           in: query
-          description: The number of rows to get.
           required: false
           schema:
             type: integer
@@ -3745,21 +3725,12 @@ components:
       properties:
         status:
           type: integer
-          description: HTTP status code
         title:
           type: string
-          description: >-
-            Error title, a short summary of the error which is invariant for an error
-            type
         detail:
           type: string
-          description: >-
-            Error detail, a longer human-readable description of the error
         instance:
           type: string
-          description: >-
-            (Optional) A URL which can be used to retrieve more information about
-            the specific occurrence of the error
       additionalProperties: false
       required:
         - status
@@ -10658,7 +10629,6 @@ components:
                 - type: string
                 - type: array
                 - type: object
-          description: The rows to append to the dataset.
       additionalProperties: false
       required:
         - rows
@@ -10678,14 +10648,10 @@ components:
                 - type: string
                 - type: array
                 - type: object
-          description: The list of items for the current page
         has_more:
           type: boolean
-          description: >-
-            Whether there are more items available after this set
         url:
           type: string
-          description: The URL for accessing this list
       additionalProperties: false
       required:
         - data
@@ -11899,112 +11865,9 @@ components:
 security:
   - Default: []
 tags:
-  - name: Agents
-    description: >-
-      APIs for creating and interacting with agentic systems.
-    x-displayName: Agents
-  - name: Batches
-    description: >-
-      The API is designed to allow use of openai client libraries for seamless integration.
-
-
-      This API provides the following extensions:
-       - idempotent batch creation
-
-      Note: This API is currently under active development and may undergo changes.
-    x-displayName: >-
-      The Batches API enables efficient processing of multiple requests in a single
-      operation, particularly useful for processing large datasets, batch evaluation
-      workflows, and cost-effective inference at scale.
-  - name: Benchmarks
-    description: ''
-  - name: Conversations
-    description: >-
-      Protocol for conversation management operations.
-    x-displayName: Conversations
-  - name: DatasetIO
-    description: ''
-  - name: Datasets
-    description: ''
-  - name: Eval
-    description: >-
-      Llama Stack Evaluation API for running evaluations on model and agent candidates.
-    x-displayName: Evaluations
-  - name: Files
-    description: >-
-      This API is used to upload documents that can be used with other Llama Stack
-      APIs.
-    x-displayName: Files
-  - name: Inference
-    description: >-
-      Llama Stack Inference API for generating completions, chat completions, and
-      embeddings.
-
-
-      This API provides the raw interface to the underlying models. Three kinds of
-      models are supported:
-
-      - LLM models: these models generate "raw" and "chat" (conversational) completions.
-
-      - Embedding models: these models generate embeddings to be used for semantic
-      search.
-
-      - Rerank models: these models reorder the documents based on their relevance
-      to a query.
-    x-displayName: Inference
-  - name: Inspect
-    description: >-
-      APIs for inspecting the Llama Stack service, including health status, available
-      API routes with methods and implementing providers.
-    x-displayName: Inspect
-  - name: Models
-    description: ''
-  - name: PostTraining (Coming Soon)
-    description: ''
-  - name: Prompts
-    description: >-
-      Protocol for prompt management operations.
-    x-displayName: Prompts
-  - name: Providers
-    description: >-
-      Providers API for inspecting, listing, and modifying providers and their configurations.
-    x-displayName: Providers
-  - name: Safety
-    description: OpenAI-compatible Moderations API.
-    x-displayName: Safety
-  - name: Scoring
-    description: ''
-  - name: ScoringFunctions
-    description: ''
-  - name: Shields
-    description: ''
-  - name: ToolGroups
-    description: ''
-  - name: ToolRuntime
-    description: ''
-  - name: VectorIO
+  - name: DatasetIOService
     description: ''
 x-tagGroups:
   - name: Operations
     tags:
-      - Agents
-      - Batches
-      - Benchmarks
-      - Conversations
-      - DatasetIO
-      - Datasets
-      - Eval
-      - Files
-      - Inference
-      - Inspect
-      - Models
-      - PostTraining (Coming Soon)
-      - Prompts
-      - Providers
-      - Safety
-      - Scoring
-      - ScoringFunctions
-      - Shields
-      - ToolGroups
-      - ToolRuntime
-      - VectorIO
+      - DatasetIOService

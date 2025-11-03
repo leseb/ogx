@@ -30,14 +30,12 @@ paths:
         default:
           $ref: '#/components/responses/DefaultError'
       tags:
-        - DatasetIO
+        - DatasetIOService
       summary: Append rows to a dataset.
       description: Append rows to a dataset.
       parameters:
         - name: dataset_id
           in: path
-          description: >-
-            The ID of the dataset to append the rows to.
           required: true
           schema:
             type: string
@@ -52,7 +50,7 @@ paths:
     get:
       responses:
         '200':
-          description: A PaginatedResponse.
+          description: OK
           content:
             application/json:
               schema:
@@ -68,42 +66,24 @@ paths:
         default:
           $ref: '#/components/responses/DefaultError'
       tags:
-        - DatasetIO
+        - DatasetIOService
       summary: >-
         Get a paginated list of rows from a dataset.
       description: >-
         Get a paginated list of rows from a dataset.
-
-        Uses offset-based pagination where:
-
-        - start_index: The starting index (0-based). If None, starts from beginning.
-
-        - limit: Number of items to return. If None or -1, returns all items.
-
-
-        The response includes:
-
-        - data: List of items for the current page.
-
-        - has_more: Whether there are more items available after this set.
       parameters:
         - name: dataset_id
           in: path
-          description: >-
-            The ID of the dataset to get the rows from.
           required: true
           schema:
             type: string
         - name: start_index
           in: query
-          description: >-
-            Index into dataset for the first row to get. Get all rows if None.
           required: false
           schema:
             type: integer
         - name: limit
           in: query
-          description: The number of rows to get.
           required: false
           schema:
             type: integer
@@ -736,21 +716,12 @@ components:
       properties:
         status:
           type: integer
-          description: HTTP status code
         title:
           type: string
-          description: >-
-            Error title, a short summary of the error which is invariant for an error
-            type
         detail:
           type: string
-          description: >-
-            Error detail, a longer human-readable description of the error
         instance:
           type: string
-          description: >-
-            (Optional) A URL which can be used to retrieve more information about
-            the specific occurrence of the error
       additionalProperties: false
       required:
         - status
@@ -774,7 +745,6 @@ components:
                 - type: string
                 - type: array
                 - type: object
-          description: The rows to append to the dataset.
       additionalProperties: false
       required:
         - rows
@@ -794,14 +764,10 @@ components:
                 - type: string
                 - type: array
                 - type: object
-          description: The list of items for the current page
         has_more:
           type: boolean
-          description: >-
-            Whether there are more items available after this set
         url:
           type: string
-          description: The URL for accessing this list
       additionalProperties: false
       required:
         - data
