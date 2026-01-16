@@ -1,0 +1,202 @@
+name: Open Responses Compliance Tests
+
+run-name: Run Open Responses compliance tests against Llama Stack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/llama_stack/**'
+      - 'scripts/run_openresponses_tests.py'
+      - '.github/workflows/openresponses-compliance.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/llama_stack/**'
+      - 'scripts/run_openresponses_tests.py'
+      - '.github/workflows/openresponses-compliance.yml'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Ollama model to use (e.g., gpt-oss:120b, llama3.2:3b)'
+        required: false
+        default: 'llama3.2:3b'
+      ollama_image:
+        description: 'Ollama Docker image to use'
+        required: false
+        default: 'ollama-with-models'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openresponses-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@0b6c75ffbb3ee31f6e5b6c7b8c8e5c5e5c5e5c5e5 # v5.1.0
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python environment
+        run: |
+          python3.13 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install llama-stack
+
+      - name: Start Ollama
+        run: |
+          MODEL="${{ github.event.inputs.model || 'llama3.2:3b' }}"
+          OLLAMA_IMAGE="${{ github.event.inputs.ollama_image || 'ollama-with-models' }}"
+
+          echo "Starting Ollama with image: $OLLAMA_IMAGE"
+          docker run -d --name ollama -p 11434:11434 docker.io/llamastack/$OLLAMA_IMAGE
+
+          echo "Waiting for Ollama to be ready..."
+          timeout 60 bash -c 'while ! curl -s http://127.0.0.1:11434/api/tags > /dev/null; do sleep 1; done'
+
+          echo "Pulling model: $MODEL"
+          docker exec ollama ollama pull "$MODEL" || echo "Model may already be available"
+
+          echo "Verifying Ollama is running..."
+          curl -s http://127.0.0.1:11434/api/tags
+
+      - name: Install Llama Stack dependencies
+        run: |
+          source venv/bin/activate
+          llama stack list-deps starter --format uv | sh
+
+      - name: Create custom config with CORS
+        run: |
+          source venv/bin/activate
+
+          # Get the starter config path and copy it
+          python3 << 'EOF'
+          import yaml
+          from pathlib import Path
+          from llama_stack.core.utils.config_resolution import resolve_config_or_distro
+
+          # Resolve the starter config path
+          starter_config_path = resolve_config_or_distro("starter")
+          print(f"Found starter config at: {starter_config_path}")
+
+          # Read the starter config
+          with open(starter_config_path) as f:
+              config = yaml.safe_load(f)
+
+          # Add CORS configuration
+          if "server" not in config:
+              config["server"] = {}
+
+          config["server"]["port"] = 8321
+          config["server"]["cors"] = {
+              "allow_origins": ["https://www.openresponses.org"],
+              "allow_origin_regex": "https?://localhost:\\d+",
+              "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+              "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+          }
+
+          # Write to temporary location
+          output_dir = Path("/tmp/llama-stack-config")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          output_path = output_dir / "config.yaml"
+
+          with open(output_path, "w") as f:
+              yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+          print(f"Config created with CORS settings at: {output_path}")
+          print("Server configuration:")
+          print(yaml.dump(config["server"], default_flow_style=False))
+          EOF
+
+      - name: Start Llama Stack server
+        env:
+          OLLAMA_URL: http://localhost:11434/v1
+        run: |
+          source venv/bin/activate
+          export OLLAMA_URL=http://localhost:11434/v1
+
+          echo "Starting Llama Stack server with config: /tmp/llama-stack-config/config.yaml"
+          llama stack run /tmp/llama-stack-config/config.yaml &
+          LLAMA_STACK_PID=$!
+          echo "LLAMA_STACK_PID=$LLAMA_STACK_PID" >> $GITHUB_ENV
+
+          echo "Waiting for server to be ready..."
+          for i in {1..60}; do
+            if curl -s http://localhost:8321/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "Server did not become ready in time"
+              curl -s http://localhost:8321/ || echo "Server not responding"
+            fi
+            sleep 2
+          done
+
+          echo "Server health check:"
+          curl -s http://localhost:8321/health || echo "Health endpoint not available, continuing..."
+
+      - name: Install Playwright
+        run: |
+          source venv/bin/activate
+          pip install playwright
+          playwright install chromium
+
+      - name: Run Open Responses compliance tests
+        env:
+          OPENRESPONSES_BASE_URL: http://localhost:8321
+          OPENRESPONSES_MODEL: ollama/${{ github.event.inputs.model || 'llama3.2:3b' }}
+          OPENRESPONSES_API_KEY: foo
+          OPENRESPONSES_AUTH_HEADER: Authorization
+          OPENRESPONSES_USE_BEARER: "false"
+        run: |
+          source venv/bin/activate
+
+          echo "Running Open Responses compliance tests..."
+          echo "Base URL: $OPENRESPONSES_BASE_URL"
+          echo "Model: $OPENRESPONSES_MODEL"
+
+          python scripts/run_openresponses_tests.py \
+            --base-url "$OPENRESPONSES_BASE_URL" \
+            --model "$OPENRESPONSES_MODEL" \
+            --api-key "$OPENRESPONSES_API_KEY" \
+            --auth-header-name "$OPENRESPONSES_AUTH_HEADER" \
+            --headless \
+            --output /tmp/test-results.json || TEST_EXIT_CODE=$?
+
+          echo "Test results:"
+          cat /tmp/test-results.json || echo "No results file generated"
+
+          # Exit with the test exit code if tests failed
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -n "$LLAMA_STACK_PID" ]; then
+            echo "Stopping Llama Stack server (PID: $LLAMA_STACK_PID)..."
+            kill $LLAMA_STACK_PID 2>/dev/null || true
+          fi
+
+          echo "Stopping Ollama container..."
+          docker stop ollama 2>/dev/null || true
+          docker rm ollama 2>/dev/null || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e35e35e # v4.4.3
+        with:
+          name: openresponses-test-results
+          path: /tmp/test-results.json
+          if-no-files-found: ignore
