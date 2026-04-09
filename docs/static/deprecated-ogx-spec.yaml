@@ -11,6 +11,7 @@ info:
         migration reference only.
   version: v1
 servers:
+<<<<<<< HEAD:docs/static/deprecated-ogx-spec.yaml
 - url: http://any-hosted-ogx.com
 paths:
   /v1/safety/run-shield:
@@ -172,6 +173,10 @@ paths:
           title: Identifier
         description: The identifier of the shield to unregister.
       deprecated: true
+=======
+- url: http://any-hosted-llama-stack.com
+paths: {}
+>>>>>>> b464869e8 (refactor!: regenerate specs after upstream merge):docs/static/deprecated-llama-stack-spec.yaml
 components:
   schemas:
     Error:
@@ -6657,32 +6662,35 @@ components:
         title: CompletionInputType
       title: StringType | ... (9 variants)
     RegisterShieldRequest:
+      description: Request model for registering a shield.
       properties:
         shield_id:
-          type: string
-          title: Shield Id
           description: The identifier of the shield to register.
+          title: Shield Id
+          type: string
         provider_shield_id:
           anyOf:
           - type: string
           - type: 'null'
           description: The identifier of the shield in the provider.
+          nullable: true
         provider_id:
           anyOf:
           - type: string
           - type: 'null'
           description: The identifier of the provider.
+          nullable: true
         params:
           anyOf:
           - additionalProperties: true
             type: object
           - type: 'null'
           description: The parameters of the shield.
-      type: object
+          nullable: true
       required:
       - shield_id
       title: RegisterShieldRequest
-      description: Request model for registering a shield.
+      type: object
     AllowedToolsFilter:
       properties:
         tool_names:
