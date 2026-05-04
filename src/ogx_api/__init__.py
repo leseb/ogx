@@ -165,7 +165,6 @@ from .datatypes import (
     RemoteProviderConfig,
     RemoteProviderSpec,
     RoutingTable,
-    ShieldsProtocolPrivate,
     ToolGroupsProtocolPrivate,
     VectorStoresProtocolPrivate,
 )
@@ -449,26 +448,6 @@ from .rag_tool import (
     WeightedRanker,
 )
 from .resource import Resource, ResourceType
-from .safety import (
-    ModerationObject,
-    ModerationObjectResults,
-    RunModerationRequest,
-    Safety,
-    SafetyViolation,
-    ShieldStore,
-    ViolationLevel,
-)
-
-from .shields import (
-    CommonShieldFields,
-    GetShieldRequest,
-    ListShieldsResponse,
-    RegisterShieldRequest,
-    Shield,
-    ShieldInput,
-    Shields,
-    UnregisterShieldRequest,
-)
 from .tools import (
     ListToolDefsResponse,
     ListToolGroupsResponse,
@@ -583,7 +562,6 @@ __all__ = [
     "EmbeddedChunk",
     "ConflictError",
     "CommonModelFields",
-    "CommonShieldFields",
     "CompletionInputType",
     "CompletionRequest",
     "Connector",
@@ -685,7 +663,6 @@ __all__ = [
     "ListProvidersResponse",
     "ListRoutesRequest",
     "ListRoutesResponse",
-    "ListShieldsResponse",
     "ListToolDefsResponse",
     "ListToolGroupsResponse",
     "ListToolsRequest",
@@ -705,8 +682,6 @@ __all__ = [
     "RegisterModelRequest",
     "UnregisterModelRequest",
     "ModelsProtocolPrivate",
-    "ModerationObject",
-    "ModerationObjectResults",
     "NumberType",
     "object_to_json",
     "OpenAIAssistantMessageParam",
@@ -927,9 +902,6 @@ __all__ = [
     "RetrieveFileRequest",
     "RouteInfo",
     "RoutingTable",
-    "RunModerationRequest",
-    "Safety",
-    "SafetyViolation",
     "SamplingParams",
     "SamplingStrategy",
     "Schema",
@@ -937,14 +909,6 @@ __all__ = [
     "SchemaOptions",
     "SearchRankingOptions",
     "ServiceNotEnabledError",
-    "Shield",
-    "ShieldInput",
-    "ShieldStore",
-    "Shields",
-    "ShieldsProtocolPrivate",
-    "GetShieldRequest",
-    "RegisterShieldRequest",
-    "UnregisterShieldRequest",
     "SpecialToolGroup",
     "StrictJsonType",
     "StringType",
@@ -1006,7 +970,6 @@ __all__ = [
     "VectorStoreNotFoundError",
     "VectorStoresProtocolPrivate",
     "VersionInfo",
-    "ViolationLevel",
     "WebSearchToolTypes",
     "WeightedRanker",
     # Interactions API
