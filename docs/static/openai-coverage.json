@@ -4,11 +4,7 @@
   "llama_spec": "docs/static/ogx-spec.yaml",
   "summary": {
     "endpoints": {
-<<<<<<< HEAD
-      "implemented": 30,
-=======
-      "implemented": 28,
->>>>>>> ccea12b2a (refactor!: remove Safety/Shields API and use moderation_endpoint in responses config)
+      "implemented": 29,
       "total": 146,
       "missing": [
         "/assistants",
@@ -131,19 +127,11 @@
       ]
     },
     "conformance": {
-<<<<<<< HEAD
-      "score": 91.8,
-      "issues": 184,
-      "missing_properties": 101,
-      "total_problems": 285,
-      "total_properties": 3487
-=======
-      "score": 92.9,
+      "score": 93.0,
       "issues": 179,
       "missing_properties": 62,
       "total_problems": 241,
-      "total_properties": 3388
->>>>>>> ccea12b2a (refactor!: remove Safety/Shields API and use moderation_endpoint in responses config)
+      "total_properties": 3434
     }
   },
   "categories": {
