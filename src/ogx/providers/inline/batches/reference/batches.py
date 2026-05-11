@@ -32,7 +32,7 @@ from ogx_api import (
     OpenAIChatCompletionRequestWithExtraBody,
     OpenAIDeveloperMessageParam,
     OpenAIEmbeddingsRequestWithExtraBody,
-    OpenAIFilePurpose,
+    OpenAIFileUploadPurpose,
     OpenAIMessageParam,
     OpenAISystemMessageParam,
     OpenAIToolMessageParam,
@@ -699,7 +699,7 @@ class ReferenceBatchesImpl(Batches):
         with AsyncBytesIO("\n".join(output_lines).encode("utf-8")) as file_buffer:
             file_buffer.filename = f"{batch_id}_{file_type}.jsonl"
             uploaded_file = await self.files_api.openai_upload_file(
-                request=UploadFileRequest(purpose=OpenAIFilePurpose.BATCH),
+                request=UploadFileRequest(purpose=OpenAIFileUploadPurpose.BATCH),
                 file=file_buffer,
             )
             return uploaded_file.id
