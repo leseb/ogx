@@ -790,7 +790,7 @@ function Providers() {
   return (
     <Section className={styles.providerSection}>
       <div className="container">
-        <h2>23 inference providers. 13 vector stores. 6 tool runtime backends.</h2>
+        <h2>23 inference providers. 13 vector stores. 7 safety backends.</h2>
         <p className={styles.providerDesc}>
           Develop locally with Ollama. Deploy to production with vLLM.
           Wrap Bedrock or Vertex without lock-in. Same API surface, different backend.
