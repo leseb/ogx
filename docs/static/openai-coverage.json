@@ -4,7 +4,7 @@
   "llama_spec": "docs/static/ogx-spec.yaml",
   "summary": {
     "endpoints": {
-      "implemented": 29,
+      "implemented": 30,
       "total": 146,
       "missing": [
         "/assistants",
@@ -35,7 +35,6 @@
         "/images/edits",
         "/images/generations",
         "/images/variations",
-        "/moderations",
         "/organization/audit_logs",
         "/organization/certificates",
         "/organization/certificates/activate",
@@ -127,11 +126,11 @@
       ]
     },
     "conformance": {
-      "score": 93.2,
-      "issues": 175,
-      "missing_properties": 59,
-      "total_problems": 234,
-      "total_properties": 3432
+      "score": 92.2,
+      "issues": 173,
+      "missing_properties": 98,
+      "total_problems": 271,
+      "total_properties": 3487
     }
   },
   "categories": {
@@ -1194,8 +1193,8 @@
       ]
     },
     "Files": {
-      "score": 76.2,
-      "issues": 8,
+      "score": 92.9,
+      "issues": 1,
       "missing_properties": 2,
       "total_properties": 42,
       "endpoints": [
@@ -1205,24 +1204,9 @@
             {
               "method": "GET",
               "missing_properties": [],
-              "conformance_issues": [
-                {
-                  "property": "GET.responses.200.content.application/json.properties.data.items.properties.expires_at",
-                  "details": [
-                    "Type removed: ['integer']",
-                    "Nullable added (OpenAI non-nullable)",
-                    "Union variants added: 2"
-                  ]
-                },
-                {
-                  "property": "GET.responses.200.content.application/json.properties.data.items.properties.purpose",
-                  "details": [
-                    "Enum values removed: ['assistants_output', 'batch_output', 'fine-tune', 'fine-tune-results', 'vision', 'user_data']"
-                  ]
-                }
-              ],
+              "conformance_issues": [],
               "missing_count": 0,
-              "issues_count": 2
+              "issues_count": 0
             },
             {
               "method": "POST",
@@ -1237,30 +1221,10 @@
                     "Type removed: ['object']",
                     "Union variants added: 2"
                   ]
-                },
-                {
-                  "property": "POST.requestBody.content.multipart/form-data.properties.purpose",
-                  "details": [
-                    "Enum values removed: ['fine-tune', 'vision', 'user_data', 'evals']"
-                  ]
-                },
-                {
-                  "property": "POST.responses.200.content.application/json.properties.expires_at",
-                  "details": [
-                    "Type removed: ['integer']",
-                    "Nullable added (OpenAI non-nullable)",
-                    "Union variants added: 2"
-                  ]
-                },
-                {
-                  "property": "POST.responses.200.content.application/json.properties.purpose",
-                  "details": [
-                    "Enum values removed: ['assistants_output', 'batch_output', 'fine-tune', 'fine-tune-results', 'vision', 'user_data']"
-                  ]
                 }
               ],
               "missing_count": 2,
-              "issues_count": 4
+              "issues_count": 1
             }
           ]
         },
@@ -1277,24 +1241,9 @@
             {
               "method": "GET",
               "missing_properties": [],
-              "conformance_issues": [
-                {
-                  "property": "GET.responses.200.content.application/json.properties.expires_at",
-                  "details": [
-                    "Type removed: ['integer']",
-                    "Nullable added (OpenAI non-nullable)",
-                    "Union variants added: 2"
-                  ]
-                },
-                {
-                  "property": "GET.responses.200.content.application/json.properties.purpose",
-                  "details": [
-                    "Enum values removed: ['assistants_output', 'batch_output', 'fine-tune', 'fine-tune-results', 'vision', 'user_data']"
-                  ]
-                }
-              ],
+              "conformance_issues": [],
               "missing_count": 0,
-              "issues_count": 2
+              "issues_count": 0
             }
           ]
         },
@@ -1351,11 +1300,106 @@
         }
       ]
     },
+    "Moderations": {
+      "score": 17.0,
+      "issues": 5,
+      "missing_properties": 39,
+      "total_properties": 53,
+      "endpoints": [
+        {
+          "path": "/moderations",
+          "operations": [
+            {
+              "method": "POST",
+              "missing_properties": [
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.harassment",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.harassment/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.hate",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.hate/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.illicit",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.illicit/violent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.self-harm",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.self-harm/instructions",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.self-harm/intent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.sexual",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.sexual/minors",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.violence",
+                "POST.responses.200.content.application/json.properties.results.items.properties.categories.properties.violence/graphic",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.harassment",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.harassment/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.hate",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.hate/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.illicit",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.illicit/violent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.self-harm",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.self-harm/instructions",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.self-harm/intent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.sexual",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.sexual/minors",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.violence",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types.properties.violence/graphic",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.harassment",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.harassment/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.hate",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.hate/threatening",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.illicit",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.illicit/violent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.self-harm",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.self-harm/instructions",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.self-harm/intent",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.sexual",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.sexual/minors",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.violence",
+                "POST.responses.200.content.application/json.properties.results.items.properties.category_scores.properties.violence/graphic"
+              ],
+              "conformance_issues": [
+                {
+                  "property": "POST.requestBody.content.application/json.properties.input",
+                  "details": [
+                    "Union variants added: 2"
+                  ]
+                },
+                {
+                  "property": "POST.requestBody.content.application/json.properties.model",
+                  "details": [
+                    "Nullable added (OpenAI non-nullable)",
+                    "Default changed: omni-moderation-latest -> None"
+                  ]
+                },
+                {
+                  "property": "POST.responses.200.content.application/json.properties.results.items.properties.categories",
+                  "details": [
+                    "Type removed: ['object']",
+                    "Union variants added: 2"
+                  ]
+                },
+                {
+                  "property": "POST.responses.200.content.application/json.properties.results.items.properties.category_applied_input_types",
+                  "details": [
+                    "Type removed: ['object']",
+                    "Union variants added: 2"
+                  ]
+                },
+                {
+                  "property": "POST.responses.200.content.application/json.properties.results.items.properties.category_scores",
+                  "details": [
+                    "Type removed: ['object']",
+                    "Union variants added: 2"
+                  ]
+                }
+              ],
+              "missing_count": 39,
+              "issues_count": 5
+            }
+          ]
+        }
+      ]
+    },
     "Responses": {
-      "score": 88.8,
+      "score": 88.9,
       "issues": 25,
       "missing_properties": 0,
-      "total_properties": 223,
+      "total_properties": 225,
       "endpoints": [
         {
           "path": "/responses",
