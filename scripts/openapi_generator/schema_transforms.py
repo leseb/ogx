@@ -524,7 +524,7 @@ def _clean_schema_descriptions(openapi_schema: dict[str, Any]) -> dict[str, Any]
 
 
 def _promote_model_extra_body_fields(openapi_schema: dict[str, Any]) -> dict[str, Any]:
-    """Strip fields marked x-extra-body-field from schemas and add to x-llama-stack-extra-body-params."""
+    """Strip fields marked x-extra-body-field from schemas and add to x-ogx-extra-body-params."""
     schemas = openapi_schema.get("components", {}).get("schemas", {})
     schema_extra: dict[str, dict[str, Any]] = {}
     for name, defn in schemas.items():
@@ -551,7 +551,7 @@ def _promote_model_extra_body_fields(openapi_schema: dict[str, Any]) -> dict[str
             if isinstance(ref, dict) and "$ref" in ref:
                 ref_name = ref["$ref"].split("/")[-1]
                 if ref_name in schema_extra:
-                    rb["x-llama-stack-extra-body-params"] = schema_extra[ref_name]
+                    rb["x-ogx-extra-body-params"] = schema_extra[ref_name]
     return openapi_schema
 
 
