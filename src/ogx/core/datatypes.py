@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ogx.core.access_control.datatypes import AccessRule, RouteAccessRule
 from ogx.core.storage.datatypes import (
-    KVStoreReference,
     StorageBackendType,
     StorageConfig,
 )
@@ -746,7 +745,7 @@ class RegisteredResources(BaseModel):
 
 
 class ServerConfig(BaseModel):
-    """Configuration for the HTTP(S) server including TLS, authentication, and quotas."""
+    """Configuration for the HTTP server including TLS and authentication."""
 
     port: int = Field(
         default=8321,
@@ -773,16 +772,6 @@ class ServerConfig(BaseModel):
     host: str | None = Field(
         default=None,
         description="The host the server should listen on",
-    )
-    quota: QuotaConfig | None = Field(
-        default=None,
-        description="Per client quota request configuration",
-    )
-    cors: bool | CORSConfig | None = Field(
-        default=None,
-        description="CORS configuration for cross-origin requests. Can be:\n"
-        "- true: Enable localhost CORS for development\n"
-        "- {allow_origins: [...], allow_methods: [...], ...}: Full configuration",
     )
     workers: int = Field(
         default=1,
