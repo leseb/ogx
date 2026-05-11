@@ -127,11 +127,11 @@
       ]
     },
     "conformance": {
-      "score": 92.0,
-      "issues": 180,
-      "missing_properties": 98,
-      "total_problems": 278,
-      "total_properties": 3487
+      "score": 93.2,
+      "issues": 175,
+      "missing_properties": 59,
+      "total_problems": 234,
+      "total_properties": 3432
     }
   },
   "categories": {
