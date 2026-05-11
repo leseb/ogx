@@ -18,8 +18,6 @@ utils/
   vector_io/           # Vector I/O utilities
   __init__.py
   forward_headers.py   # Provider data header forwarding
-  pagination.py        # Pagination helpers for list endpoints
-  scheduler.py         # Job scheduling for async operations
 ```
 
 ## Key Components
