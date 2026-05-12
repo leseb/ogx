@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ogx.core.access_control.datatypes import AccessRule, RouteAccessRule
 from ogx.core.storage.datatypes import (
+    KVStoreReference,
     StorageBackendType,
     StorageConfig,
 )
