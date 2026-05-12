@@ -1,4 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) The OGX Contributors.
 # All rights reserved.
 #
 # This source code is licensed under the terms described in the LICENSE file in
@@ -14,12 +14,12 @@ then fix any failing tests.
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from llama_stack.providers.inline.interactions.config import InteractionsConfig
-from llama_stack.providers.inline.interactions.impl import BuiltinInteractionsImpl
+from ogx.providers.inline.interactions.config import InteractionsConfig
+from ogx.providers.inline.interactions.impl import BuiltinInteractionsImpl
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -44,20 +44,23 @@ class TestNonStreamingShape:
         missing = expected_fields - actual_fields
         assert not missing, f"Expected fields missing from Google fixture: {missing}"
 
-    def test_our_response_has_required_google_fields(self):
+    async def test_our_response_has_required_google_fields(self):
         _load_fixture("google_non_streaming.json")
 
-        impl = BuiltinInteractionsImpl(config=InteractionsConfig(), inference_api=MagicMock())
+        impl = BuiltinInteractionsImpl(config=InteractionsConfig(), inference_api=MagicMock(), policy=[])
+        impl.store = MagicMock()
+        impl.store.store_interaction = AsyncMock()
         openai_resp = MagicMock()
         openai_resp.choices = [MagicMock()]
         openai_resp.choices[0].message = MagicMock()
         openai_resp.choices[0].message.content = "4"
+        openai_resp.choices[0].message.tool_calls = None
         openai_resp.choices[0].finish_reason = "stop"
         openai_resp.usage = MagicMock()
         openai_resp.usage.prompt_tokens = 10
         openai_resp.usage.completion_tokens = 1
 
-        result = impl._openai_to_google(openai_resp, "test-model")
+        result = await impl._openai_to_google(openai_resp, "test-model", [])
         our_fields = set(result.model_dump(exclude_none=True).keys())
 
         required_fields = {"id", "status", "outputs", "usage", "model", "role", "object"}

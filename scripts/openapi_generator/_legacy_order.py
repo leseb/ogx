@@ -1,4 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) The OGX Contributors.
 # All rights reserved.
 #
 # This source code is licensed under the terms described in the LICENSE file in
@@ -30,7 +30,6 @@ LEGACY_PATH_ORDER = [
     "/v1/inspect/routes",
     "/v1/models",
     "/v1/models/{model_id}",
-    "/v1/moderations",
     "/v1/prompts",
     "/v1/prompts/{prompt_id}",
     "/v1/prompts/{prompt_id}/set-default-version",
@@ -40,14 +39,11 @@ LEGACY_PATH_ORDER = [
     "/v1/responses",
     "/v1/responses/{response_id}",
     "/v1/responses/{response_id}/input_items",
-    "/v1/safety/run-shield",
-    "/v1/shields",
-    "/v1/shields/{identifier}",
     "/v1/tool-runtime/invoke",
     "/v1/tool-runtime/list-tools",
     "/v1/toolgroups",
     "/v1/toolgroups/{toolgroup_id}",
-    "/v1/tools",
+    "/v1/admin/tools",
     "/v1/tools/{tool_name}",
     "/v1/vector-io/insert",
     "/v1/vector-io/query",
@@ -151,9 +147,6 @@ LEGACY_SCHEMA_ORDER = [
     "OpenAIListModelsResponse",
     "Model",
     "ModelType",
-    "RunModerationRequest",
-    "ModerationObject",
-    "ModerationObjectResults",
     "Prompt",
     "ListPromptsResponse",
     "CreatePromptRequest",
@@ -221,10 +214,6 @@ LEGACY_SCHEMA_ORDER = [
     "OpenAIResponseObjectStreamResponseWebSearchCallSearching",
     "OpenAIDeleteResponseObject",
     "ListOpenAIResponseInputItem",
-    "RunShieldRequest",
-    "RunShieldResponse",
-    "SafetyViolation",
-    "ViolationLevel",
     "AggregationFunctionType",
     "ArrayType",
     "BooleanType",
@@ -235,8 +224,6 @@ LEGACY_SCHEMA_ORDER = [
     "ObjectType",
     "StringType",
     "UnionType",
-    "Shield",
-    "ListShieldsResponse",
     "InvokeToolRequest",
     "ImageContentItem",
     "InterleavedContent",
@@ -285,7 +272,6 @@ LEGACY_SCHEMA_ORDER = [
     "RerankResponse",
     "RegisterModelRequest",
     "ParamType",
-    "RegisterShieldRequest",
     "RegisterToolGroupRequest",
 ]
 
@@ -328,12 +314,12 @@ LEGACY_TAGS = [
         "x-displayName": "File Processors",
     },
     {
-        "description": "This API is used to upload documents that can be used with other Llama Stack APIs.",
+        "description": "This API is used to upload documents that can be used with other OGX APIs.",
         "name": "Files",
         "x-displayName": "Files",
     },
     {
-        "description": "Llama Stack Inference API for generating completions, chat completions, and embeddings.\n"
+        "description": "OGX Inference API for generating completions, chat completions, and embeddings.\n"
         "\n"
         "This API provides the raw interface to the underlying models. Three kinds of models are supported:\n"
         '- LLM models: these models generate "raw" and "chat" (conversational) completions.\n'
@@ -343,7 +329,7 @@ LEGACY_TAGS = [
         "x-displayName": "Inference",
     },
     {
-        "description": "APIs for inspecting the Llama Stack service, including health status, available API routes with "
+        "description": "APIs for inspecting the OGX service, including health status, available API routes with "
         "methods and implementing providers.",
         "name": "Inspect",
         "x-displayName": "Inspect",
@@ -365,8 +351,6 @@ LEGACY_TAGS = [
         "name": "Providers",
         "x-displayName": "Providers",
     },
-    {"description": "OpenAI-compatible Moderations API.", "name": "Safety", "x-displayName": "Safety"},
-    {"description": "", "name": "Shields"},
     {"description": "", "name": "ToolGroups"},
     {"description": "", "name": "ToolRuntime"},
     {
@@ -398,8 +382,6 @@ LEGACY_TAG_ORDER = [
     "Prompts",
     "Providers",
     "Responses",
-    "Safety",
-    "Shields",
     "ToolGroups",
     "ToolRuntime",
     "Tools",
@@ -425,8 +407,6 @@ LEGACY_TAG_GROUPS = [
             "Prompts",
             "Providers",
             "Responses",
-            "Safety",
-            "Shields",
             "ToolGroups",
             "ToolRuntime",
             "Tools",

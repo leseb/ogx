@@ -1,4 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) The OGX Contributors.
 # All rights reserved.
 #
 # This source code is licensed under the terms described in the LICENSE file in
@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from llama_stack.providers.remote.inference.vertexai.config import VertexAIConfig
-from llama_stack.providers.remote.inference.vertexai.vertexai import VertexAIInferenceAdapter
-from llama_stack_api import OpenAIChatCompletionChunk, OpenAIEmbeddingsRequestWithExtraBody
-from llama_stack_api.inference.models import OpenAIChatCompletionRequestWithExtraBody
+from ogx.providers.remote.inference.vertexai.config import VertexAIConfig
+from ogx.providers.remote.inference.vertexai.vertexai import VertexAIInferenceAdapter
+from ogx_api import OpenAIChatCompletionChunk, OpenAIEmbeddingsRequestWithExtraBody
+from ogx_api.inference.models import OpenAIChatCompletionRequestWithExtraBody
 
 from .conftest import _async_pager
 
@@ -166,7 +166,6 @@ class TestDroppedParameterWarnings:
             pytest.param("logit_bias", {"50256": -100.0}, logging.WARNING, "logit_bias", id="logit_bias"),
             pytest.param("prompt_cache_key", "mykey", logging.WARNING, "prompt_cache_key", id="prompt_cache_key"),
             pytest.param("user", "test-user", logging.DEBUG, "user", id="user"),
-            pytest.param("safety_identifier", "test-id", logging.DEBUG, "safety_identifier", id="safety_identifier"),
         ],
     )
     async def test_unsupported_param_logged(
@@ -183,7 +182,7 @@ class TestDroppedParameterWarnings:
         }
         params = OpenAIChatCompletionRequestWithExtraBody.model_validate(payload)
 
-        with caplog.at_level(logging.DEBUG, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.DEBUG, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert any(expected_text in r.message for r in caplog.records if r.levelno == log_level)
@@ -301,7 +300,7 @@ class TestServiceTier:
             }
         )
 
-        with caplog.at_level(logging.WARNING, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.WARNING, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert not any("service_tier" in r.message for r in caplog.records if r.levelno == logging.WARNING)
@@ -331,11 +330,11 @@ class TestTelemetryStreamOptions:
         monkeypatch.setattr(adapter, "_get_client", lambda: fake_client)
         monkeypatch.setattr(adapter, "_build_generation_config", lambda *_args, **_kwargs: object())
         monkeypatch.setattr(
-            "llama_stack.providers.remote.inference.vertexai.vertexai.converters.convert_openai_messages_to_gemini",
+            "ogx.providers.remote.inference.vertexai.vertexai.converters.convert_openai_messages_to_gemini",
             lambda messages: (None, [{"role": "user", "parts": [{"text": "ok"}]}]),
         )
         monkeypatch.setattr(
-            "llama_stack.providers.remote.inference.vertexai.vertexai.converters.convert_openai_tools_to_gemini",
+            "ogx.providers.remote.inference.vertexai.vertexai.converters.convert_openai_tools_to_gemini",
             lambda _tools: None,
         )
         monkeypatch.setattr(adapter, "_stream_chat_completion", _stream_chat_completion)
@@ -412,7 +411,7 @@ class TestEmbeddingsModelExtra:
             }
         )
 
-        with caplog.at_level(logging.DEBUG, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.DEBUG, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_embeddings(params)
 
         # Should have a DEBUG log mentioning model_extra or extra body parameters
@@ -431,7 +430,7 @@ class TestEmbeddingsModelExtra:
             input="hello",
         )
 
-        with caplog.at_level(logging.DEBUG, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.DEBUG, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_embeddings(params)
 
         # Should NOT have a debug log about model_extra
@@ -463,7 +462,7 @@ class TestDeprecatedFunctionCalling:
             }
         )
 
-        with caplog.at_level(logging.WARNING, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.WARNING, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert any("functions" in record.message and "deprecated" in record.message for record in caplog.records)
@@ -493,7 +492,7 @@ class TestDeprecatedFunctionCalling:
             }
         )
 
-        with caplog.at_level(logging.WARNING, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.WARNING, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert not any("functions" in record.message and "deprecated" in record.message for record in caplog.records)
@@ -521,7 +520,7 @@ class TestDeprecatedFunctionCalling:
             }
         )
 
-        with caplog.at_level(logging.WARNING, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.WARNING, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert any("function_call" in record.message and "deprecated" in record.message for record in caplog.records)
@@ -548,7 +547,7 @@ class TestDeprecatedFunctionCalling:
             }
         )
 
-        with caplog.at_level(logging.WARNING, logger="llama_stack.providers.remote.inference.vertexai.vertexai"):
+        with caplog.at_level(logging.WARNING, logger="ogx.providers.remote.inference.vertexai.vertexai"):
             await adapter.openai_chat_completion(params)
 
         assert not any(

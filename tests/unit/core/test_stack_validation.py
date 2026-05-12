@@ -1,4 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) The OGX Contributors.
 # All rights reserved.
 #
 # This source code is licensed under the terms described in the LICENSE file in
@@ -10,28 +10,25 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from llama_stack.core.datatypes import (
+from ogx.core.datatypes import (
     QualifiedModel,
     RerankerModel,
     RewriteQueryParams,
-    SafetyConfig,
     ServerConfig,
     StackConfig,
     VectorStoresConfig,
 )
-from llama_stack.core.stack import register_connectors, validate_safety_config, validate_vector_stores_config
-from llama_stack.core.storage.datatypes import ServerStoresConfig, StorageConfig
-from llama_stack_api import (
+from ogx.core.stack import register_connectors, validate_vector_stores_config
+from ogx.core.storage.datatypes import ServerStoresConfig, StorageConfig
+from ogx_api import (
     Api,
     Connector,
     ConnectorInput,
     ConnectorType,
     ListConnectorsResponse,
     ListModelsResponse,
-    ListShieldsResponse,
     Model,
     ModelType,
-    Shield,
 )
 
 
@@ -48,6 +45,7 @@ class TestVectorStoresValidation:
                     inference=None,
                     conversations=None,
                     prompts=None,
+                    connectors=None,
                 ),
             ),
             vector_stores=VectorStoresConfig(
@@ -80,6 +78,7 @@ class TestVectorStoresValidation:
                     inference=None,
                     conversations=None,
                     prompts=None,
+                    connectors=None,
                 ),
             ),
             vector_stores=VectorStoresConfig(
@@ -125,40 +124,6 @@ class TestVectorStoresValidation:
             )
 
 
-class TestSafetyConfigValidation:
-    async def test_validate_success(self):
-        safety_config = SafetyConfig(default_shield_id="shield-1")
-
-        shield = Shield(
-            identifier="shield-1",
-            provider_id="provider-x",
-            provider_resource_id="model-x",
-            params={},
-        )
-
-        shields_impl = AsyncMock()
-        shields_impl.list_shields.return_value = ListShieldsResponse(data=[shield])
-
-        await validate_safety_config(safety_config, {Api.shields: shields_impl, Api.safety: AsyncMock()})
-
-    async def test_validate_wrong_shield_id(self):
-        safety_config = SafetyConfig(default_shield_id="wrong-shield-id")
-
-        shields_impl = AsyncMock()
-        shields_impl.list_shields.return_value = ListShieldsResponse(
-            data=[
-                Shield(
-                    identifier="shield-1",
-                    provider_resource_id="model-x",
-                    provider_id="provider-x",
-                    params={},
-                )
-            ]
-        )
-        with pytest.raises(ValueError, match="wrong-shield-id"):
-            await validate_safety_config(safety_config, {Api.shields: shields_impl, Api.safety: AsyncMock()})
-
-
 class TestRegisterConnectors:
     """Tests for register_connectors function - config-driven CUD."""
 
@@ -174,6 +139,7 @@ class TestRegisterConnectors:
                     inference=None,
                     conversations=None,
                     prompts=None,
+                    connectors=None,
                 ),
             ),
             connectors=connectors,
@@ -433,6 +399,7 @@ class TestServerConfigRegistryRefreshInterval:
                     inference=None,
                     conversations=None,
                     prompts=None,
+                    connectors=None,
                 ),
             ),
             server=ServerConfig(registry_refresh_interval_seconds=120),

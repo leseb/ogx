@@ -1,4 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright (c) The OGX Contributors.
 # All rights reserved.
 #
 # This source code is licensed under the terms described in the LICENSE file in
@@ -31,9 +31,9 @@ SECTION_ORDER = [
 ]
 
 ORGANIZATION = {
-    "name": "llama-stack-client",
-    "docs": "https://llama-stack.readthedocs.io/en/latest/",
-    "contact": "llamastack@meta.com",
+    "name": "ogx-client",
+    "docs": "https://ogx.readthedocs.io/en/latest/",
+    "contact": "contributors@ogx.dev",
 }
 
 SECURITY = [{}, {"BearerAuth": []}]
@@ -42,37 +42,37 @@ SECURITY_SCHEMES = {"BearerAuth": {"type": "http", "scheme": "bearer"}}
 
 TARGETS = {
     "node": {
-        "package_name": "llama-stack-client",
-        "production_repo": "llamastack/llama-stack-client-typescript",
+        "package_name": "ogx-client",
+        "production_repo": "ogx-ai/ogx-client-typescript",
         "publish": {"npm": False},
     },
     "python": {
-        "package_name": "llama_stack_client",
-        "production_repo": "llamastack/llama-stack-client-python",
+        "package_name": "ogx_client",
+        "production_repo": "ogx-ai/ogx-client-python",
         "options": {"use_uv": True},
         "publish": {"pypi": True},
-        "project_name": "llama_stack_client",
+        "project_name": "ogx_client",
     },
     "go": {
-        "package_name": "llama-stack-client",
-        "production_repo": "llamastack/llama-stack-client-go",
+        "package_name": "ogx-client",
+        "production_repo": "ogx-ai/ogx-client-go",
         "options": {"enable_v2": True, "back_compat_use_shared_package": False},
     },
 }
 
 CLIENT_SETTINGS = {
-    "default_env_prefix": "LLAMA_STACK_CLIENT",
+    "default_env_prefix": "OGX_CLIENT",
     "opts": {
         "api_key": {
             "type": "string",
-            "read_env": "LLAMA_STACK_CLIENT_API_KEY",
+            "read_env": "OGX_CLIENT_API_KEY",
             "auth": {"security_scheme": "BearerAuth"},
             "nullable": True,
         }
     },
 }
 
-ENVIRONMENTS = {"production": "http://any-hosted-llama-stack.com"}
+ENVIRONMENTS = {"production": "http://any-hosted-ogx.com"}
 
 PAGINATION = [
     {
@@ -106,7 +106,7 @@ STREAMING = {
 SETTINGS = {
     "license": "MIT",
     "unwrap_response_fields": ["data"],
-    "file_header": "Copyright (c) Meta Platforms, Inc. and affiliates.\n"
+    "file_header": "Copyright (c) The OGX Contributors.\n"
     "All rights reserved.\n"
     "\n"
     "This source code is licensed under the terms described in the "
@@ -147,7 +147,6 @@ ALL_RESOURCES = {
             "interleaved_content_item": "InterleavedContentItem",
             "interleaved_content": "InterleavedContent",
             "param_type": "ParamType",
-            "safety_violation": "SafetyViolation",
             "sampling_params": "SamplingParams",
             "system_message": "SystemMessage",
             "health_info": "HealthInfo",
@@ -286,7 +285,17 @@ ALL_RESOURCES = {
                         "type": "http",
                         "endpoint": "get /v1/chat/completions/{completion_id}",
                     },
-                }
+                },
+                "subresources": {
+                    "messages": {
+                        "methods": {
+                            "list": {
+                                "type": "http",
+                                "endpoint": "get /v1/chat/completions/{completion_id}/messages",
+                            }
+                        }
+                    }
+                },
             }
         },
     },
@@ -366,23 +375,6 @@ ALL_RESOURCES = {
     },
     "routes": {
         "methods": {"list": {"paginated": False, "endpoint": "get /v1/inspect/routes"}},
-    },
-    "moderations": {
-        "models": {"create_response": "ModerationObject"},
-        "methods": {"create": "post /v1/moderations"},
-    },
-    "safety": {
-        "models": {"run_shield_response": "RunShieldResponse"},
-        "methods": {"run_shield": "post /v1/safety/run-shield"},
-    },
-    "shields": {
-        "models": {"shield": "Shield", "list_shields_response": "ListShieldsResponse"},
-        "methods": {
-            "retrieve": "get /v1/shields/{identifier}",
-            "list": {"paginated": False, "endpoint": "get /v1/shields"},
-            "register": "post /v1/shields",
-            "delete": "delete /v1/shields/{identifier}",
-        },
     },
     "files": {
         "models": {
