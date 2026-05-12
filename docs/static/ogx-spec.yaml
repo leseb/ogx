@@ -1888,7 +1888,7 @@ paths:
           input_items = client.responses.input_items.list("resp_abc123")
           for item in input_items:
               print(item)
-  /v1/tools:
+  /v1/admin/tools:
     get:
       responses:
         '200':
@@ -1913,7 +1913,7 @@ paths:
       - Tools
       summary: List tools with optional tool group filter.
       description: List tools with optional tool group filter.
-      operationId: list_tools_v1_tools_get
+      operationId: list_tools_v1_admin_tools_get
       parameters:
       - name: toolgroup_id
         in: query
