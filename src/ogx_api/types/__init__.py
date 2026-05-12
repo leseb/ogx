@@ -422,34 +422,10 @@ from ogx_api.responses import (
     DeleteResponseRequest,
     ListResponseInputItemsRequest,
     ListResponsesRequest,
-    ResponseGuardrail,
-    ResponseGuardrailSpec,
     ResponseItemInclude,
     ResponseStreamOptions,
     ResponseTruncation,
     RetrieveResponseRequest,
-)
-
-# Safety
-from ogx_api.safety import (
-    ModerationObject,
-    ModerationObjectResults,
-    RunModerationRequest,
-    RunShieldRequest,
-    RunShieldResponse,
-    SafetyViolation,
-    ViolationLevel,
-)
-
-# Shields
-from ogx_api.shields import (
-    CommonShieldFields,
-    GetShieldRequest,
-    ListShieldsResponse,
-    RegisterShieldRequest,
-    Shield,
-    ShieldInput,
-    UnregisterShieldRequest,
 )
 
 # Tools
@@ -871,28 +847,10 @@ __all__ = [
     "DeleteResponseRequest",
     "ListResponseInputItemsRequest",
     "ListResponsesRequest",
-    "ResponseGuardrail",
-    "ResponseGuardrailSpec",
     "ResponseItemInclude",
     "ResponseStreamOptions",
     "ResponseTruncation",
     "RetrieveResponseRequest",
-    # Safety
-    "ModerationObject",
-    "ModerationObjectResults",
-    "RunModerationRequest",
-    "RunShieldRequest",
-    "RunShieldResponse",
-    "SafetyViolation",
-    "ViolationLevel",
-    # Shields
-    "CommonShieldFields",
-    "GetShieldRequest",
-    "ListShieldsResponse",
-    "RegisterShieldRequest",
-    "Shield",
-    "ShieldInput",
-    "UnregisterShieldRequest",
     # Tools
     "ListToolDefsResponse",
     "ListToolGroupsResponse",
