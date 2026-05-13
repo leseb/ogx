@@ -31,8 +31,6 @@ from ogx_api import (
     OpenAIChatCompletionChunkWithReasoning,
     OpenAIChatCompletionRequestWithExtraBody,
     OpenAIChatCompletionWithReasoning,
-    OpenAICompletion,
-    OpenAICompletionRequestWithExtraBody,
     OpenAIEmbeddingsRequestWithExtraBody,
     OpenAIEmbeddingsResponse,
 )
@@ -185,17 +183,6 @@ class BedrockInferenceAdapter(OpenAIMixin):
         """Bedrock's OpenAI-compatible API does not support the /v1/embeddings endpoint."""
         raise NotImplementedError(
             "Bedrock's OpenAI-compatible API does not support /v1/embeddings endpoint. "
-            "See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html"
-        )
-
-    async def openai_completion(
-        self,
-        params: OpenAICompletionRequestWithExtraBody,
-    ) -> OpenAICompletion | AsyncIterator[OpenAICompletion]:
-        """Bedrock's OpenAI-compatible API does not support the /v1/completions endpoint."""
-        raise NotImplementedError(
-            "Bedrock's OpenAI-compatible API does not support /v1/completions endpoint. "
-            "Only /v1/chat/completions is supported. "
             "See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-chat-completions.html"
         )
 
