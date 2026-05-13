@@ -23,10 +23,10 @@ from ogx_api import (
 )
 
 
-def _make_completion(completion_id: str) -> OpenAIChatCompletion:
+def _make_completion(completion_id: str, created: int = 1000) -> OpenAIChatCompletion:
     return OpenAIChatCompletion(
         id=completion_id,
-        created=1000,
+        created=created,
         model="test-model",
         object="chat.completion",
         choices=[
@@ -98,13 +98,17 @@ def test_inference_store_write_queue_after_event_loop_reset(tmp_path):
     reset_sqlstore_engines()
 
     async def request_phase():
-        # Force write queue on to simulate PostgreSQL behavior
+        # Force write queue on with a single writer to simulate PostgreSQL
+        # behavior. Multiple writers race on SQLite, so use one worker.
         store.enable_write_queue = True
+        store._num_writers = 1
         store._queue = None
         store._worker_tasks = []
 
         for i in range(3):
-            await store.store_chat_completion(_make_completion(f"cmpl-{i}"), _make_messages())
+            await store.store_chat_completion(
+                _make_completion(f"cmpl-{i}", created=1000 + i), _make_messages()
+            )
         await store.flush()
 
         result = await store.list_chat_completions()
