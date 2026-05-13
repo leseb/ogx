@@ -106,9 +106,7 @@ def test_inference_store_write_queue_after_event_loop_reset(tmp_path):
         store._worker_tasks = []
 
         for i in range(3):
-            await store.store_chat_completion(
-                _make_completion(f"cmpl-{i}", created=1000 + i), _make_messages()
-            )
+            await store.store_chat_completion(_make_completion(f"cmpl-{i}", created=1000 + i), _make_messages())
         await store.flush()
 
         result = await store.list_chat_completions()
