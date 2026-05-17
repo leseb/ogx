@@ -98,6 +98,18 @@ def register_sqlstore_backends(backends: dict[str, StorageBackendConfig]) -> Non
         _SQLSTORE_BACKENDS[name] = cfg
 
 
+def set_sqlstore_init_phase(active: bool) -> None:
+    """Mark all cached SqlStore instances as being in the init phase.
+
+    During init phase, _ensure_engine() logs a warning if triggered, since
+    the engine would be bound to the temporary event loop used by
+    Stack.initialize() rather than uvicorn's request-handling loop.
+    """
+    for instance in _SQLSTORE_INSTANCES.values():
+        if hasattr(instance, "_set_init_phase"):
+            instance._set_init_phase(active)
+
+
 def reset_sqlstore_engines() -> None:
     """Reset engines on all cached SqlStore instances.
 

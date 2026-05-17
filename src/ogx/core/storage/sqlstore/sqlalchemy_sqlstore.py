@@ -83,6 +83,10 @@ class SqlAlchemySqlStoreImpl(SqlStore):
         self._pending_columns: dict[
             str, list[tuple[str, ColumnType, bool]]
         ] = {}  # table -> [(col_name, col_type, nullable)]
+        self._init_phase: bool = False
+
+    def _set_init_phase(self, active: bool) -> None:
+        self._init_phase = active
 
     async def _ensure_engine(self) -> None:
         """Lazy initialization: create engine on first use in the current event loop.
@@ -90,6 +94,15 @@ class SqlAlchemySqlStoreImpl(SqlStore):
         This fixes event loop mismatch issues when Stack is initialized in a different
         event loop (e.g., ThreadPoolExecutor) than request handling (uvicorn's loop).
         """
+        if self._init_phase and self._engine is None:
+            import traceback
+
+            logger.warning(
+                "SQL engine created during init phase — this will cause event loop "
+                "mismatch errors at request time. Move this data operation out of "
+                "initialize() or ensure reset_sqlstore_engines() runs after init.",
+                caller=traceback.format_stack()[-3].strip(),
+            )
         if self._engine is None:
             # Create engine in the current running event loop
             self._engine = self.create_engine()

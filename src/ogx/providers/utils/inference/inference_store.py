@@ -6,6 +6,7 @@
 import asyncio
 from typing import Any, NamedTuple
 
+from opentelemetry import metrics
 from sqlalchemy.exc import IntegrityError
 
 from ogx.core.datatypes import AccessRule
@@ -19,6 +20,10 @@ from ogx.core.task import (
     create_detached_background_task,
 )
 from ogx.log import get_logger
+from ogx.telemetry.constants import (
+    INFERENCE_STORE_WRITE_ERRORS_TOTAL,
+    INFERENCE_STORE_WRITES_TOTAL,
+)
 from ogx_api import (
     ChatCompletionMessage,
     ChatCompletionMessageList,
@@ -33,6 +38,16 @@ from ogx_api import (
 from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 logger = get_logger(name=__name__, category="inference")
+
+_meter = metrics.get_meter("ogx.inference.store", version="1.0.0")
+store_writes_total = _meter.create_counter(
+    name=INFERENCE_STORE_WRITES_TOTAL,
+    description="Total successful inference store writes",
+)
+store_write_errors_total = _meter.create_counter(
+    name=INFERENCE_STORE_WRITE_ERRORS_TOTAL,
+    description="Total failed inference store writes",
+)
 
 
 class _WriteItem(NamedTuple):
@@ -202,6 +217,7 @@ class InferenceStore:
                 with activate_request_context(item.request_context):
                     await self._write_chat_completion(item.completion, item.messages)
             except Exception as e:  # noqa: BLE001
+                store_write_errors_total.add(1)
                 logger.error("Error writing chat completion", error=str(e))
             finally:
                 self._queue.task_done()
@@ -226,6 +242,7 @@ class InferenceStore:
                 table=self.reference.table_name,
                 data=record_data,
             )
+            store_writes_total.add(1)
         except IntegrityError as e:
             # Duplicate chat completion IDs can be generated during tests especially if they are replaying
             # recorded responses across different tests. No need to warn or error under those circumstances.
@@ -236,6 +253,7 @@ class InferenceStore:
             if self._is_unique_constraint_error(error_message):
                 # Update the existing record instead
                 await self.sql_store.update(table=self.reference.table_name, data=record_data, where={"id": data["id"]})
+                store_writes_total.add(1)
             else:
                 # Re-raise if it's not a unique constraint error
                 raise
