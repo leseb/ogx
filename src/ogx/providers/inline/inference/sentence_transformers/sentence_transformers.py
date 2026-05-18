@@ -54,8 +54,8 @@ class SentenceTransformersInferenceImpl(
     async def list_models(self) -> list[Model] | None:
         return [
             Model(
-                identifier="all-MiniLM-L6-v2",
-                provider_resource_id="all-MiniLM-L6-v2",
+                identifier="nomic-ai/nomic-embed-text-v1.5",
+                provider_resource_id="nomic-ai/nomic-embed-text-v1.5",
                 provider_id=self.__provider_id__,
                 metadata={
                     "embedding_dimension": 384,

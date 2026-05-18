@@ -13,12 +13,12 @@ class SentenceTransformersInferenceConfig(BaseModel):
     """Configuration for the sentence-transformers inference provider."""
 
     trust_remote_code: bool = Field(
-        default=False,
+        default=True,
         description="Whether to trust and execute remote code from model repositories. "
-        "Set to True for models that require custom code (e.g., nomic-ai/nomic-embed-text-v1.5). "
-        "Defaults to False for security.",
+        "Required for the default model (nomic-ai/nomic-embed-text-v1.5). "
+        "Set to False only when using models that do not require custom code.",
     )
 
     @classmethod
     def sample_run_config(cls, **kwargs) -> dict[str, Any]:
-        return {"trust_remote_code": False}
+        return {"trust_remote_code": True}

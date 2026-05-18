@@ -116,8 +116,8 @@ SETUP_DEFINITIONS: dict[str, Setup] = {
         ),
         defaults={
             "text_model": "bedrock/openai.gpt-oss-20b-1:0",
-            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-            "embedding_dimension": 384,
+            "embedding_model": "sentence-transformers/nomic-ai/nomic-embed-text-v1.5",
+            "embedding_dimension": 768,
         },
     ),
     "gpt": Setup(
@@ -143,8 +143,8 @@ SETUP_DEFINITIONS: dict[str, Setup] = {
         defaults={
             "text_model": "azure/gpt-4o",
             "vision_model": "azure/gpt-4o",
-            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-            "embedding_dimension": 384,
+            "embedding_model": "sentence-transformers/nomic-ai/nomic-embed-text-v1.5",
+            "embedding_dimension": 768,
         },
     ),
     "watsonx": Setup(
@@ -160,8 +160,8 @@ SETUP_DEFINITIONS: dict[str, Setup] = {
         defaults={
             "text_model": "vertexai/publishers/google/models/gemini-2.0-flash",
             "vision_model": "vertexai/publishers/google/models/gemini-2.0-flash",
-            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-            "embedding_dimension": 384,
+            "embedding_model": "sentence-transformers/nomic-ai/nomic-embed-text-v1.5",
+            "embedding_dimension": 768,
         },
     ),
     "tgi": Setup(
@@ -225,7 +225,7 @@ SETUP_DEFINITIONS: dict[str, Setup] = {
         defaults={
             "text_model": "gemini/gemini-2.5-flash-lite",
             "embedding_model": "gemini/text-embedding-004",
-            "embedding_dimension": 384,
+            "embedding_dimension": 768,
         },
     ),
     "groq": Setup(
@@ -251,7 +251,7 @@ SETUP_DEFINITIONS: dict[str, Setup] = {
         description="Qwen3-Next model for contextual retrieval validation",
         defaults={
             "text_model": "Qwen3-Next-80B-A3B-Instruct-FP8",
-            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+            "embedding_model": "sentence-transformers/nomic-ai/nomic-embed-text-v1.5",
         },
     ),
 }
