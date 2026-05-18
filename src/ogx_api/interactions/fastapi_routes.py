@@ -42,7 +42,7 @@ def _create_google_sse_event(event_type: str, data: Any) -> str:
     Google SSE format: event: <type>\ndata: <json>\n\n
     """
     if isinstance(data, BaseModel):
-        data = data.model_dump_json()
+        data = data.model_dump_json(exclude_none=True, by_alias=True)
     else:
         data = json.dumps(data)
     return f"event: {event_type}\ndata: {data}\n\n"
@@ -161,7 +161,7 @@ def create_router(impl: Interactions) -> APIRouter:
             )
 
         return JSONResponse(
-            content=result.model_dump(exclude_none=True),
+            content=result.model_dump(exclude_none=True, by_alias=True),
         )
 
     return router

@@ -263,9 +263,8 @@ def test_interactions_tool_calling_function_call_output(genai_client, text_model
 
 
 @pytest.mark.xfail(
-    reason="Round-trip requires exact Interactions API wire format for multi-turn with function_call/result. "
-    "Passthrough parse→dump cycle transforms field names in ways Gemini rejects. "
-    "Will be fixed when previous_interaction_id is supported.",
+    reason="Passthrough path forwards role/content turn format but Gemini Interactions API expects flat steps. "
+    "Translation path (non-Gemini) works correctly after by_alias serialization fix.",
     strict=False,
 )
 def test_interactions_tool_calling_round_trip(genai_client, text_model_id):
