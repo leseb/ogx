@@ -32,6 +32,7 @@ scripts/
   generate_openai_coverage_docs.py # Generate OpenAI API coverage docs
   openai_coverage.py           # OpenAI API coverage analysis
   provider_compat_matrix.py    # Provider compatibility matrix
+  release.sh                   # Automated release script (patch, minor, RC)
   responses_test_coverage.py   # Responses API test coverage
 ```
 
@@ -66,6 +67,24 @@ uv run python scripts/diagnose_recordings.py
 # Normalize recordings
 uv run python scripts/normalize_recordings.py
 ```
+
+### Release
+
+```bash
+# Patch release
+./scripts/release.sh 1.0.3
+
+# Minor release (creates release branches in ogx + client repos)
+./scripts/release.sh 1.1.0 --minor
+
+# Release candidate
+./scripts/release.sh 1.1.0 --rc 1
+
+# Preview without executing
+./scripts/release.sh 1.0.3 --dry-run
+```
+
+See [RELEASE_PROCESS.md](../RELEASE_PROCESS.md) for the full release procedure.
 
 ### Remote test recording (via GitHub Actions)
 

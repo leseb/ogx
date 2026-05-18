@@ -106,40 +106,103 @@ For each release, the Release Owner should complete:
 
 ### Technical Release Steps
 
-#### Patch release (e.g., 0.4.5 on existing `release-0.4.x`)
+The [`scripts/release.sh`](./scripts/release.sh) script automates the entire technical release
+process — version preparation, GitHub release creation, build monitoring, and package
+verification — in a single command.
 
-**Pre-release on `release-0.4.x`:**
+#### Prerequisites
 
-Backports are handled automatically by Mergify — patch releases ship whatever has already been backported to the release branch. No manual cherry-picking needed.
+- **`gh` CLI** installed and authenticated with write access to `ogx-ai/ogx`
+- **`git` CLI** with access to the remote
+- Verify access: `gh repo view ogx-ai/ogx --json name`
 
-- [ ] Run the [**Prepare release**](https://github.com/ogx-ai/ogx/actions/workflows/prepare-release.yml) workflow:
-  - Input `version`: `0.4.5`
-  - Input `release_branch`: `release-0.4.x`
-  - This commits `fallback_version` and `ogx-client` pin updates directly to the release branch
+#### Using the release script
 
-**Release:**
+##### Patch release (e.g., 1.0.3 on existing `release-1.0.x`)
 
-- [ ] Create GitHub release: tag `v0.4.5`, target `release-0.4.x`
-- [ ] Verify all 4 packages published:
-  - [ogx on PyPI](https://pypi.org/project/ogx/)
-  - [ogx-api on PyPI](https://pypi.org/project/ogx-api/)
-  - [ogx-client on PyPI](https://pypi.org/project/ogx-client/)
-  - [ogx-client on npm](https://www.npmjs.com/package/ogx-client)
+Backports are handled automatically by Mergify — patch releases ship whatever has
+already been backported to the release branch. No manual cherry-picking needed.
 
-**Post-release (automated):**
+```bash
+./scripts/release.sh 1.0.3
+```
 
-The following steps are handled automatically by the [**Post-release automation**](https://github.com/ogx-ai/ogx/actions/workflows/post-release.yml) workflow, which triggers on `release: published`:
+The script will:
 
-- Tags `main` with `v0.4.6-dev` (next dev tag)
-- Commits `fallback_version` bump to `"0.4.6.dev0"` directly to `main`
-- Commits the npm lockfile update directly to `release-0.4.x`
+1. Validate the version and confirm that `release-1.0.x` exists
+2. Trigger the [**Prepare release**](https://github.com/ogx-ai/ogx/actions/workflows/prepare-release.yml)
+   workflow to update `fallback_version` and `ogx-client` pins on the release branch
+3. Wait for the prepare workflow to complete
+4. Create a GitHub release (`v1.0.3` targeting `release-1.0.x`) with auto-generated notes
+5. Monitor the [build and publish workflow](https://github.com/ogx-ai/ogx/actions/workflows/pypi.yml)
+6. Verify all 4 packages are available:
+   - [ogx on PyPI](https://pypi.org/project/ogx/)
+   - [ogx-api on PyPI](https://pypi.org/project/ogx-api/)
+   - [ogx-client on PyPI](https://pypi.org/project/ogx-client/)
+   - [ogx-client on npm](https://www.npmjs.com/package/ogx-client)
 
-#### Minor release (e.g., 0.5.0 — new release branch)
+##### Minor release (e.g., 1.1.0 — new release branches)
 
-**All of the above, plus:**
+```bash
+./scripts/release.sh 1.1.0 --minor
+```
 
-- [ ] Create `release-0.5.x` branch off `main`
-- [ ] Ensure the release branch has the setuptools-scm config in both `pyproject.toml` files (`dynamic = ["version"]`, `[tool.setuptools_scm]`, etc.)
+The `--minor` flag creates the `release-1.1.x` branch from `main` in:
+
+- `ogx-ai/ogx`
+- `ogx-ai/ogx-client-python`
+- `ogx-ai/ogx-client-typescript`
+
+Then it runs the standard release flow. Use this only for the first release on a new minor version.
+
+##### Release candidate
+
+```bash
+./scripts/release.sh 1.1.0 --rc 1
+```
+
+This creates a prerelease tagged `v1.1.0rc1`. Issue additional RCs by incrementing
+the number (`--rc 2`, `--rc 3`, etc.) until the release is stable.
+
+RC publish behavior:
+
+- Python packages publish to test.pypi.org
+- npm publishes with the `rc` dist-tag (not `latest`)
+- Docker publishes versioned prerelease tags only (not `latest`)
+
+Post-release housekeeping (dev tag and bump PRs) is skipped automatically for prereleases.
+
+Minor releases and RCs can be combined:
+
+```bash
+./scripts/release.sh 1.1.0 --minor --rc 1
+```
+
+##### Dry run
+
+Preview what the script would do without executing anything:
+
+```bash
+./scripts/release.sh 1.0.3 --dry-run
+```
+
+#### Post-release (automated)
+
+The following steps are handled automatically by the [**Post-release automation**](https://github.com/ogx-ai/ogx/actions/workflows/post-release.yml) workflow for stable releases:
+
+- Tags `main` with the next dev tag (e.g., `v1.0.4-dev`)
+- Opens a PR to bump `fallback_version` to the next `.dev0` on `main`
+- Opens a PR to update the npm lockfile on the release branch
+
+#### Manual fallback
+
+If the script is unavailable or you need to run the steps individually:
+
+1. **Prepare release**: Go to [Actions > Prepare release](https://github.com/ogx-ai/ogx/actions/workflows/prepare-release.yml)
+   and run the workflow with inputs `version` and `release_branch`
+2. **Create release**: Go to [Releases > New release](https://github.com/ogx-ai/ogx/releases/new),
+   set the tag (`vX.Y.Z`), target the release branch, and publish
+3. **Verify packages**: Check PyPI and npm for all 4 packages listed above
 
 ## Release Artifacts
 
@@ -194,10 +257,11 @@ The unified workflow (`.github/workflows/pypi.yml`) builds and publishes all pac
 
 | Trigger | Version | Target |
 |---|---|---|
-| `release: published` | From tag (`v0.4.5` → `0.4.5`) | pypi.org + npm |
+| `release: published` (stable) | From tag (`v0.4.5` → `0.4.5`) | pypi.org + npm (`latest`) + Docker `latest` |
+| `release: published` (prerelease) | From tag (`v0.5.0rc1` → `0.5.0rc1`) | test.pypi.org + npm (`rc` dist-tag) + versioned Docker tags |
 | `schedule` (nightly) | `{base}.dev{YYYYMMDD}` (from dev tag or fallback) | test.pypi.org |
 | `workflow_dispatch` dry_run=test-pypi | `{base}.dev{YYYYMMDD}` or manual `version` input | test.pypi.org |
-| `workflow_dispatch` dry_run=off | Manual `version` input | pypi.org + npm |
+| `workflow_dispatch` dry_run=off | Manual `version` input | Stable: pypi.org + npm (`latest`) + Docker `latest`; RC (`*rcN`): test.pypi.org + npm (`rc`) + versioned Docker tags |
 | `workflow_dispatch` dry_run=build-only | N/A | No publish |
 
 ## Automation Workflows
@@ -207,7 +271,7 @@ The unified workflow (`.github/workflows/pypi.yml`) builds and publishes all pac
 Triggered via `workflow_dispatch`. Takes a version and release branch as input, then:
 
 - Updates `fallback_version` to the release version in both `pyproject.toml` files
-- Updates `ogx-client` pins to `==X.Y.Z`
+- Updates `ogx-client` pins to the exact release version (`==X.Y.Z` or `==X.Y.ZrcN`)
 - Opens a PR to the release branch
 
 ### Post-release (`.github/workflows/post-release.yml`)

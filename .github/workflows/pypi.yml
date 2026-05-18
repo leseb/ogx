@@ -46,7 +46,9 @@
 # dry_run:
 #   - test-pypi: Publish to test.pypi.org, npm pack only (default)
 #   - build-only: Build and validate only, no publishing
-#   - off: Production publish to pypi.org and npmjs.org
+#   - off: Publish using channel inferred from version:
+#     stable -> pypi.org + npm latest + Docker latest
+#     prerelease (rc*) -> test.pypi.org + npm rc + prerelease Docker tags
 #
 # version: Optional version override (e.g., "0.2.0rc1")
 #
@@ -89,13 +91,13 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run mode'
+        description: 'Dry run mode (off respects rc prerelease channel routing)'
         required: false
         type: choice
         options:
           - 'test-pypi'      # Publish to test.pypi.org (default for testing)
           - 'build-only'     # Build and validate only, no publishing anywhere
-          - 'off'            # Production publish (use with caution!)
+          - 'off'            # Publish using stable/rc channel rules (use with caution!)
         default: 'test-pypi'
       version:
         description: 'Version override (e.g., "0.2.0rc1"). Leave empty for auto-detection.'
@@ -346,11 +348,18 @@ jobs:
             PACKAGE="$MATRIX_PACKAGE"
           fi
 
+          PYPI_API_BASE="https://pypi.org/pypi"
+          PYPI_REGISTRY="PyPI"
+          if [[ "$BASE_VERSION" =~ rc[0-9]+$ ]]; then
+            PYPI_API_BASE="https://test.pypi.org/pypi"
+            PYPI_REGISTRY="TestPyPI"
+          fi
+
           # Function to check if version exists on PyPI
           check_version_exists() {
             local pkg=$1
             local ver=$2
-            if curl -sf "https://pypi.org/pypi/${pkg}/${ver}/json" -o /dev/null 2>&1; then
+            if curl -sf "${PYPI_API_BASE}/${pkg}/${ver}/json" -o /dev/null 2>&1; then
               return 0  # exists
             else
               return 1  # does not exist
@@ -360,9 +369,12 @@ jobs:
           # Start with the base version and increment patch if needed
           VERSION="$BASE_VERSION"
 
-          # Only check/bump for non-dev versions (production releases)
-          if [[ ! "$VERSION" =~ \.dev ]]; then
-            echo "Checking if ${PACKAGE} ${VERSION} exists on PyPI..."
+          # Keep release-candidate versions stable across retries.
+          if [[ "$VERSION" =~ rc[0-9]+$ ]]; then
+            echo "RC version detected (${VERSION}), keeping exact version (no patch bump)"
+          # Only check/bump for non-dev stable versions.
+          elif [[ ! "$VERSION" =~ \.dev ]]; then
+            echo "Checking if ${PACKAGE} ${VERSION} exists on ${PYPI_REGISTRY}..."
 
             # Parse version components
             if [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(.*)$ ]]; then
@@ -381,16 +393,16 @@ jobs:
                   exit 1
                 fi
 
-                echo "Version ${VERSION} already exists on PyPI, trying next patch version..."
+                echo "Version ${VERSION} already exists on ${PYPI_REGISTRY}, trying next patch version..."
                 PATCH=$((PATCH + 1))
                 VERSION="${MAJOR}.${MINOR}.${PATCH}${SUFFIX}"
                 echo "Checking ${VERSION}..."
               done
 
               if [ "$VERSION" != "$BASE_VERSION" ]; then
-                echo "::notice::Bumped ${MATRIX_PACKAGE} (PyPI: ${PACKAGE}) version from ${BASE_VERSION} to ${VERSION} (already existed on PyPI)"
+                echo "::notice::Bumped ${MATRIX_PACKAGE} (${PYPI_REGISTRY}: ${PACKAGE}) version from ${BASE_VERSION} to ${VERSION} (already existed on ${PYPI_REGISTRY})"
               else
-                echo "Version ${VERSION} is available on PyPI for ${PACKAGE}"
+                echo "Version ${VERSION} is available on ${PYPI_REGISTRY} for ${PACKAGE}"
               fi
             else
               echo "::warning::Could not parse version ${VERSION}, using as-is"
@@ -436,6 +448,11 @@ jobs:
           # Convert PEP 440 dev version to valid semver for npm
           # e.g. 0.4.5.dev20260202 -> 0.4.5-dev.20260202
           VERSION="${BASE_VERSION/.dev/-dev.}"
+          # Convert PEP 440 RC to npm prerelease semver
+          # e.g. 1.1.0rc1 -> 1.1.0-rc1
+          if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)rc([0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}-rc${BASH_REMATCH[2]}"
+          fi
 
           # Function to check if version exists on npm using registry API
           check_npm_version_exists() {
@@ -448,8 +465,11 @@ jobs:
             fi
           }
 
-          # Only check/bump for non-dev versions (production releases)
-          if [[ ! "$VERSION" =~ -dev\. ]]; then
+          # Keep release-candidate versions stable across retries.
+          if [[ "$VERSION" =~ -rc[0-9]+$ ]]; then
+            echo "RC version detected (${VERSION}), keeping exact version (no patch bump)"
+          # Only check/bump for non-dev stable versions.
+          elif [[ ! "$VERSION" =~ -dev\. ]]; then
             echo "Checking if ${PACKAGE} ${VERSION} exists on npm..."
 
             # Parse version components (semver format)
@@ -764,9 +784,16 @@ jobs:
         run: |
           DRY_RUN="${{ inputs.dry_run }}"
           EVENT="${{ github.event_name }}"
+          IS_PRERELEASE="${{ (github.event_name == 'release' && contains(github.event.release.tag_name, 'rc')) || (github.event_name == 'workflow_dispatch' && contains(inputs.version, 'rc')) }}"
 
           # Determine target registry
-          if [ "$EVENT" == "release" ]; then
+          if [ "$IS_PRERELEASE" == "true" ] && { [ "$EVENT" == "release" ] || [ "$DRY_RUN" == "off" ]; }; then
+            {
+              echo "url=https://test.pypi.org/legacy/"
+              echo "target=test.pypi.org"
+              echo "is_production=false"
+            } >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT" == "release" ]; then
             {
               echo "url=https://upload.pypi.org/legacy/"
               echo "target=pypi.org"
@@ -841,12 +868,17 @@ jobs:
         run: |
           DRY_RUN="${{ inputs.dry_run }}"
           EVENT="${{ github.event_name }}"
+          IS_PRERELEASE="${{ (github.event_name == 'release' && contains(github.event.release.tag_name, 'rc')) || (github.event_name == 'workflow_dispatch' && contains(inputs.version, 'rc')) }}"
+          NPM_TAG="latest"
 
           echo "Event: $EVENT"
           echo "Dry run: $DRY_RUN"
 
           # Check if we should do production publish
-          if [ "$EVENT" == "release" ]; then
+          if [ "$IS_PRERELEASE" == "true" ] && { [ "$EVENT" == "release" ] || [ "$DRY_RUN" == "off" ]; }; then
+            IS_PRODUCTION=true
+            NPM_TAG="rc"
+          elif [ "$EVENT" == "release" ]; then
             IS_PRODUCTION=true
           elif [ "$DRY_RUN" == "off" ]; then
             IS_PRODUCTION=true
@@ -855,14 +887,14 @@ jobs:
           fi
 
           if [ "$IS_PRODUCTION" == "true" ]; then
-            echo "PRODUCTION: Publishing to npm"
+            echo "PRODUCTION: Publishing to npm with dist-tag '$NPM_TAG'"
             if [ -z "$NODE_AUTH_TOKEN" ]; then
               echo "::error::NPM_TOKEN secret not configured. Cannot publish to npm."
               exit 1
             fi
             # Extract and publish from the tarball
             TARBALL=$(find ./dist -name '*.tgz' | head -1)
-            npm publish "$TARBALL" --access public
+            npm publish "$TARBALL" --access public --tag "$NPM_TAG"
           else
             echo "DRY RUN: Verifying npm package (not publishing)"
             echo "Package tarball:"
@@ -881,7 +913,8 @@ jobs:
   # linux/arm64. GPU distros are built for linux/amd64 only.
   #
   # Images are pushed to: ogx/distribution-<distro>:<tag>
-  #   - Production (release or dry_run=off): tagged with VERSION and "latest"
+  #   - Stable production (release or dry_run=off): tagged with VERSION and "latest"
+  #   - Prerelease (rc*): tagged with VERSION only, installed from test-pypi
   #   - Test (test-pypi or schedule): tagged with "test-VERSION"
   publish-docker-images:
     name: Publish Docker ${{ matrix.distro }}
@@ -948,8 +981,16 @@ jobs:
 
           DRY_RUN="${{ inputs.dry_run }}"
           EVENT="${{ github.event_name }}"
+          IS_PRERELEASE="${{ (github.event_name == 'release' && contains(github.event.release.tag_name, 'rc')) || (github.event_name == 'workflow_dispatch' && contains(inputs.version, 'rc')) }}"
 
-          if [ "$EVENT" == "release" ] || [ "$DRY_RUN" == "off" ]; then
+          if [ "$IS_PRERELEASE" == "true" ] && { [ "$EVENT" == "release" ] || [ "$DRY_RUN" == "off" ]; }; then
+            {
+              echo "install_mode=test-pypi"
+              echo "tags=${IMAGE}:${VERSION}"
+              echo "version_arg=TEST_PYPI_VERSION=${VERSION}"
+            } >> "$GITHUB_OUTPUT"
+            echo "Publishing prerelease image: ${IMAGE}:${VERSION}"
+          elif [ "$EVENT" == "release" ] || [ "$DRY_RUN" == "off" ]; then
             {
               echo "install_mode=pypi"
               echo "tags=${IMAGE}:${VERSION},${IMAGE}:latest"
