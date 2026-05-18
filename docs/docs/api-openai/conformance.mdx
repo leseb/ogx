@@ -21,9 +21,9 @@ This documentation is auto-generated from the OpenAI API specification compariso
 | **Overall Conformance Score** | 93.2% |
 | **Endpoints Implemented** | 29/146 |
 | **Total Properties Checked** | 3432 |
-| **Schema/Type Issues** | 167 |
+| **Schema/Type Issues** | 168 |
 | **Missing Properties** | 65 |
-| **Total Issues to Fix** | 232 |
+| **Total Issues to Fix** | 233 |
 
 ## Integration Test Coverage
 
@@ -45,7 +45,7 @@ Categories are sorted by conformance score (lowest first, needing most attention
 | Category | Score | Properties | Issues | Missing |
 |----------|-------|------------|--------|---------|
 | Batch | 39.9% | 168 | 60 | 41 |
-| Completions | 58.7% | 46 | 17 | 2 |
+| Completions | 56.5% | 46 | 18 | 2 |
 | Models | 60.0% | 15 | 0 | 6 |
 | Embeddings | 78.6% | 14 | 3 | 0 |
 | Vector stores | 82.9% | 310 | 41 | 12 |
@@ -398,7 +398,7 @@ Below is a detailed breakdown of conformance issues and missing properties for e
 
 ### Completions
 
-**Score:** 58.7% · **Issues:** 17 · **Missing:** 2
+**Score:** 56.5% · **Issues:** 18 · **Missing:** 2
 
 #### `/completions`
 
@@ -413,7 +413,7 @@ Below is a detailed breakdown of conformance issues and missing properties for e
 </details>
 
 <details>
-<summary>Schema Issues (17)</summary>
+<summary>Schema Issues (18)</summary>
 
 | Property | Issues |
 |----------|--------|
@@ -434,6 +434,7 @@ Below is a detailed breakdown of conformance issues and missing properties for e
 | `requestBody.content.application/json.properties.temperature` | Type removed: ['number']; Nullable added (OpenAI non-nullable); Union variants added: 2; Default changed: 1 -&gt; None |
 | `requestBody.content.application/json.properties.top_p` | Type removed: ['number']; Nullable added (OpenAI non-nullable); Union variants added: 2; Default changed: 1 -&gt; None |
 | `requestBody.content.application/json.properties.user` | Type removed: ['string']; Nullable added (OpenAI non-nullable); Union variants added: 2 |
+| `responses.200.content.application/json.properties.choices.items.properties.logprobs` | Union variants added: 1; Union variants removed: 1 |
 
 </details>
 

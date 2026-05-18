@@ -116,11 +116,12 @@ providers:
         namespace: vector_io::sqlite_vec
         backend: kv_default
   - provider_id: ${env.MILVUS_URL:+milvus}
-    provider_type: inline::milvus
+    provider_type: remote::milvus
     config:
-      db_path: ${env.MILVUS_DB_PATH:=~/.ogx/distributions/ci-tests}/milvus.db
+      uri: ${env.MILVUS_URL:=}
+      token: ${env.MILVUS_TOKEN:=}
       persistence:
-        namespace: vector_io::milvus
+        namespace: vector_io::milvus_remote
         backend: kv_default
   - provider_id: ${env.CHROMADB_URL:+chromadb}
     provider_type: remote::chromadb

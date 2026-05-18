@@ -466,11 +466,7 @@ def _convert_anyof_const_to_enum(obj: Any) -> None:
 
 
 def _fix_schema_recursive(obj: Any) -> None:
-    """Recursively fix schema issues: null defaults.
-
-    Note: ``exclusiveMinimum`` is intentionally left untouched so that strict
-    lower bounds from JSON Schema are preserved in the OpenAPI output.
-    """
+    """Recursively fix schema issues: null defaults."""
     if isinstance(obj, dict):
         if "default" in obj and obj["default"] is None:
             del obj["default"]
@@ -724,16 +720,11 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
                     elif not isinstance(operation["parameters"], list):
                         operation["parameters"] = []
 
-                    # Resolve $ref to the actual schema definition so we can
-                    # extract properties and convert them to query parameters.
                     resolved_schema = schema
                     if isinstance(schema, dict) and "$ref" in schema:
                         ref_path = schema["$ref"]
                         if ref_path.startswith("#/components/schemas/"):
-                            schema_name = ref_path.split("/")[-1]
-                            ref_def = (
-                                openapi_schema.get("components", {}).get("schemas", {}).get(schema_name)
-                            )
+                            ref_def = openapi_schema.get("components", {}).get("schemas", {}).get(ref_path.split("/")[-1])
                             if isinstance(ref_def, dict):
                                 resolved_schema = ref_def
 

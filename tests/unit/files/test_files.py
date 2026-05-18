@@ -664,9 +664,7 @@ class TestOpenAIFilesAPI:
         )
 
         with pytest.raises(ResourceNotFoundError, match="not found"):
-            await files_provider.openai_retrieve_file_content(
-                request=RetrieveFileContentRequest(file_id=uploaded.id)
-            )
+            await files_provider.openai_retrieve_file_content(request=RetrieveFileContentRequest(file_id=uploaded.id))
 
     async def test_list_files_excludes_expired(self, files_provider, sample_text_file):
         """Test that expired files are excluded from list results."""

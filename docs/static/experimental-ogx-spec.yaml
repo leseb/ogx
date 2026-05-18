@@ -1884,6 +1884,7 @@ components:
           - tool_calls
           - content_filter
           - function_call
+          nullable: true
           title: Finish Reason
           type: string
         text:
@@ -1897,27 +1898,13 @@ components:
           type: integer
         logprobs:
           anyOf:
-          - properties:
-              content:
-                anyOf:
-                - items:
-                    $ref: '#/components/schemas/OpenAITokenLogProb'
-                  type: array
-                - type: 'null'
-                description: The log probabilities for the tokens in the message.
-              refusal:
-                anyOf:
-                - items:
-                    $ref: '#/components/schemas/OpenAITokenLogProb'
-                  type: array
-                - type: 'null'
-                description: The log probabilities for the refusal tokens.
-            type: object
+          - $ref: '#/components/schemas/OpenAICompletionLogprobs'
+            title: OpenAICompletionLogprobs
           - type: 'null'
           description: The log probabilities for the tokens in the choice.
           nullable: true
+          title: OpenAICompletionLogprobs
       required:
-      - finish_reason
       - text
       - index
       title: OpenAICompletionChoice
@@ -8678,7 +8665,7 @@ components:
         impact_factor:
           anyOf:
           - type: number
-            minimum: 0.0
+            exclusiveMinimum: 0.0
           - type: 'null'
           description: Impact factor for RRF algorithm
         weights:
@@ -8939,10 +8926,10 @@ components:
           - top_p
         temperature:
           description: Controls randomness in sampling. Higher values increase randomness.
+          exclusiveMinimum: 0.0
           maximum: 2.0
           title: Temperature
           type: number
-          minimum: 0.0
         top_p:
           default: 0.95
           description: Cumulative probability threshold for nucleus sampling.
