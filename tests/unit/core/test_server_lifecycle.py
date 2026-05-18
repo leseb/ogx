@@ -4,14 +4,17 @@
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
 
-"""Tests that the server startup lifecycle correctly resets SQL engines.
+"""Tests for the two-phase server startup lifecycle.
 
-Verifies that after Stack.initialize() runs in a temporary event loop,
-SQL engines are reset so they can be recreated in uvicorn's request loop.
+Phase 1 (prepare): Creates provider impls and registers SQL table metadata
+in a temporary event loop. No SQL data operations, no engine creation.
+
+Phase 2 (start): Runs data operations (register_resources, register_connectors)
+in uvicorn's event loop via the lifespan handler.
 """
 
 import asyncio
-import logging
+import logging  # allow-direct-logging
 
 from ogx.core.storage.datatypes import SqliteSqlStoreConfig
 from ogx.core.storage.sqlstore.sqlalchemy_sqlstore import SqlAlchemySqlStoreImpl
@@ -100,43 +103,49 @@ def test_set_sqlstore_init_phase_propagates(tmp_path):
     assert store._init_phase is False
 
 
-def test_server_init_lifecycle_engines_reset_after_init(tmp_path):
-    """Simulates the full server init lifecycle: init in temp loop -> reset -> use in new loop."""
+def test_prepare_does_not_create_engine(tmp_path):
+    """Simulates prepare() phase: table registration does not trigger engine creation."""
     db_path = str(tmp_path / "test.db")
-    register_sqlstore_backends({"sql_default": SqliteSqlStoreConfig(db_path=db_path)})
+    store = SqlAlchemySqlStoreImpl(SqliteSqlStoreConfig(db_path=db_path))
 
-    async def init_in_temp_loop():
-        from ogx.core.storage.sqlstore.sqlstore import _sqlstore_impl
-
-        set_sqlstore_init_phase(True)
-
-        store = await _sqlstore_impl(
-            type("Ref", (), {"backend": "sql_default", "table_name": "t"})()  # type: ignore[arg-type]
-        )
+    async def prepare_phase():
         await store.create_table(
-            "lifecycle_test",
+            "test_table",
             {"id": ColumnDefinition(type=ColumnType.STRING, primary_key=True), "value": ColumnType.STRING},
         )
-        await store.insert("lifecycle_test", {"id": "init_row", "value": "from_init"})
 
-        set_sqlstore_init_phase(False)
-        return store
+    asyncio.run(prepare_phase())
+    assert store._engine is None, "create_table should not trigger engine creation"
+    assert "test_table" in store.metadata.tables
 
-    store = asyncio.run(init_in_temp_loop())
-    assert store._engine is not None
 
-    reset_sqlstore_engines()
+def test_two_phase_lifecycle(tmp_path):
+    """Full two-phase lifecycle: prepare (temp loop) -> reset -> start (new loop)."""
+    db_path = str(tmp_path / "test.db")
+    store = SqlAlchemySqlStoreImpl(SqliteSqlStoreConfig(db_path=db_path))
+
+    # Phase 1: prepare — register tables, no engine
+    async def prepare_phase():
+        await store.create_table(
+            "items",
+            {"id": ColumnDefinition(type=ColumnType.STRING, primary_key=True), "value": ColumnType.STRING},
+        )
+
+    asyncio.run(prepare_phase())
     assert store._engine is None
 
-    async def use_in_request_loop():
-        await store.insert("lifecycle_test", {"id": "request_row", "value": "from_request"})
-        result = await store.fetch_all("lifecycle_test")
+    store.reset_engine()
+
+    # Phase 2: start — data operations create engine in the correct loop
+    async def start_phase():
+        await store.insert("items", {"id": "row1", "value": "from_start"})
+        result = await store.fetch_all("items")
         return result
 
-    result = asyncio.run(use_in_request_loop())
-    assert len(result.data) == 2
-    ids = {row["id"] for row in result.data}
-    assert ids == {"init_row", "request_row"}
+    result = asyncio.run(start_phase())
+    assert store._engine is not None
+    assert len(result.data) == 1
+    assert result.data[0]["id"] == "row1"
 
 
 def _cleanup(store: SqlAlchemySqlStoreImpl) -> None:

@@ -721,9 +721,15 @@ class Stack:
         self.provider_registry = provider_registry
         self.impls = None
 
-    # Produces a stack of providers for the given run config. Not all APIs may be
-    # asked for in the run config.
-    async def initialize(self):
+    async def prepare(self):
+        """Create provider impls for route registration. No SQL data operations.
+
+        This phase runs in a temporary event loop during StackApp.__init__().
+        It only creates impl objects and registers SQL table metadata (via
+        create_table / add_column_if_not_exists) which do NOT trigger engine
+        creation. Data operations that bind the SQL engine to an event loop
+        are deferred to start().
+        """
         if "OGX_TEST_INFERENCE_MODE" in os.environ:
             from ogx.testing.api_recorder import setup_api_recording
 
@@ -755,7 +761,7 @@ class Stack:
             if api in internal_impls:
                 await internal_impls[api].initialize()
 
-        impls = await resolve_impls(
+        self.impls = await resolve_impls(
             self.run_config,
             self.provider_registry or get_provider_registry(self.run_config),
             dist_registry,
@@ -763,15 +769,27 @@ class Stack:
             internal_impls,
         )
 
-        await register_resources(self.run_config, impls)
-        await auto_register_tool_groups(self.run_config, impls)
-        await register_connectors(self.run_config, impls)
-        await refresh_registry_once(impls)
-        await validate_vector_stores_config(self.run_config.vector_stores, impls)
-
         set_sqlstore_init_phase(False)
 
-        self.impls = impls
+    async def start(self):
+        """Run post-resolution setup with SQL data operations.
+
+        This phase runs in uvicorn's event loop via the lifespan handler,
+        so SQL engines are bound to the correct loop. Operations here
+        include registering resources, connectors, and refreshing the
+        model registry — all of which trigger fetch_all/insert/update.
+        """
+        assert self.impls is not None, "Must call prepare() before start()"
+        await register_resources(self.run_config, self.impls)
+        await auto_register_tool_groups(self.run_config, self.impls)
+        await register_connectors(self.run_config, self.impls)
+        await refresh_registry_once(self.impls)
+        await validate_vector_stores_config(self.run_config.vector_stores, self.impls)
+
+    async def initialize(self):
+        """Full initialization (both phases). Used by library client and tests."""
+        await self.prepare()
+        await self.start()
 
     def create_registry_refresh_task(self):
         assert self.impls is not None, "Must call initialize() before starting"

@@ -112,17 +112,17 @@ class StackApp(FastAPI):
     def __init__(self, config: StackConfig, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.stack: Stack = Stack(config)
+        self.ready: bool = False
 
-        # Initialize stack in a temporary event loop to set up impls for route registration.
-        # Storage backends use lazy engine initialization, so connections are created on
-        # first use in the correct event loop, avoiding event loop mismatch issues.
+        # Phase 1: create provider impls for route/middleware registration.
+        # Only registers SQL table metadata — no data operations, no engine
+        # creation. Data I/O runs in uvicorn's event loop via start().
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, self.stack.initialize())  # type: ignore[no-untyped-call]
+            future = executor.submit(asyncio.run, self.stack.prepare())  # type: ignore[no-untyped-call]
             future.result()
 
-        # Reset SQL engines that may have been created in the temporary event loop
-        # (e.g. by register_connectors → list_connectors → fetch_all) so they are
-        # recreated lazily in uvicorn's request-handling event loop.
+        # Safety net: reset any engines that were accidentally created
+        # during prepare() (e.g. by a misbehaving provider factory).
         from ogx.core.storage.sqlstore.sqlstore import reset_sqlstore_engines
 
         reset_sqlstore_engines()
@@ -130,15 +130,21 @@ class StackApp(FastAPI):
 
 @asynccontextmanager
 async def lifespan(app: StackApp) -> AsyncIterator[None]:
-    """FastAPI lifespan context manager that starts background tasks and handles shutdown.
+    """FastAPI lifespan context manager that runs data-IO init and background tasks.
 
-    Args:
-        app: The StackApp instance.
+    Phase 2 of the two-phase startup: runs register_resources,
+    register_connectors, and other SQL data operations in uvicorn's
+    event loop so engines are bound to the correct loop.
     """
     server_version = parse_version("ogx")
 
     logger.info("Starting up OGX server", version=server_version)
     assert app.stack is not None
+
+    # Phase 2: data operations in the correct event loop
+    await app.stack.start()  # type: ignore[no-untyped-call]
+    app.ready = True
+
     app.stack.create_registry_refresh_task()  # type: ignore[no-untyped-call]
     yield
     logger.info("Shutting down")
