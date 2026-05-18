@@ -69,6 +69,7 @@ dependencies = [
     "aiosqlite>=0.21.0",                              # server - for metadata store
     "asyncpg",                                        # for metadata store
     "sqlalchemy[asyncio]>=2.0.41",                    # server - for conversations
+    "alembic>=1.16",                                  # server - PostgreSQL schema migrations
     "mcp>=1.23.0",                                    # for connectors
     "zstandard>=0.23.0",                              # server - zstd request decompression
 ]
