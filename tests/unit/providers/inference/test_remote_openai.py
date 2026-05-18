@@ -15,6 +15,8 @@ from ogx.providers.remote.inference.openai.openai import (
     OpenAIInferenceAdapter,
 )
 from ogx_api import (
+    Model,
+    ModelType,
     OpenAIChatCompletion,
     OpenAIChatCompletionRequestWithExtraBody,
     OpenAIChatCompletionResponseMessage,
@@ -48,7 +50,11 @@ def _clear_warned_models():
 def _make_adapter():
     config = OpenAIConfig(api_key="fake-key")
     adapter = OpenAIInferenceAdapter(config=config)
-    adapter.model_store = AsyncMock()
+    model_store = AsyncMock()
+    # Default: model not registered, so _get_provider_model_id returns the
+    # identifier unchanged (no alias resolution).
+    model_store.has_model = AsyncMock(return_value=False)
+    adapter.model_store = model_store
     return adapter
 
 
@@ -224,6 +230,34 @@ class TestOpenAIMaxTokensClamping:
             call_kwargs = mock_client.chat.completions.create.call_args.kwargs
             assert call_kwargs["max_tokens"] == 16384
             assert call_kwargs["max_completion_tokens"] == 16384
+
+    async def test_clamps_aliased_model(self, mock_openai_response):
+        adapter = _make_adapter()
+        # Simulate an alias: "my-gpt" resolves to "gpt-4o-mini" via model store
+        alias_model = Model(
+            identifier="my-gpt",
+            provider_resource_id="gpt-4o-mini",
+            model_type=ModelType.llm,
+            provider_id="openai",
+        )
+        adapter.model_store.has_model = AsyncMock(return_value=True)
+        adapter.model_store.get_model = AsyncMock(return_value=alias_model)
+
+        with patch.object(OpenAIInferenceAdapter, "client", new_callable=PropertyMock) as mock_client_prop:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_response)
+            mock_client_prop.return_value = mock_client
+
+            params = OpenAIChatCompletionRequestWithExtraBody(
+                model="my-gpt",
+                messages=[{"role": "user", "content": "hi"}],
+                stream=False,
+                max_tokens=32000,
+            )
+            await adapter.openai_chat_completion(params)
+
+            call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+            assert call_kwargs["max_tokens"] == 16384
 
 
 class TestOpenAIModelMetadata:

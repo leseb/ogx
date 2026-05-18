@@ -109,7 +109,10 @@ class OpenAIInferenceAdapter(OpenAIMixin):
         self,
         params: OpenAIChatCompletionRequestWithExtraBody,
     ) -> OpenAIChatCompletion | AsyncIterator[OpenAIChatCompletionChunk]:
-        max_output_tokens = self._get_max_output_tokens(params.model)
+        # Resolve alias to canonical model name so clamping rules apply
+        # even when the request uses an alias.
+        resolved_model = await self._get_provider_model_id(params.model)
+        max_output_tokens = self._get_max_output_tokens(resolved_model)
         if max_output_tokens is not None:
             updated_params = params
             if params.max_tokens is not None and params.max_tokens > max_output_tokens:
