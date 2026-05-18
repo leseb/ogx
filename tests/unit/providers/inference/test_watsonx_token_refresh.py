@@ -39,10 +39,7 @@ async def test_refresh_iam_token_deduplicates_concurrent_failures(monkeypatch):
         lambda: _FailingIamClient(calls),
     )
 
-    results = await asyncio.gather(
-        *(adapter._refresh_iam_token("watsonx-api-key") for _ in range(3)),
-        return_exceptions=True,
-    )
+    results = await asyncio.gather(*(adapter._refresh_iam_token("watsonx-api-key") for _ in range(3)))
 
-    assert all(isinstance(r, RuntimeError) for r in results)
+    assert results == ["watsonx-api-key", "watsonx-api-key", "watsonx-api-key"]
     assert len(calls) == 1

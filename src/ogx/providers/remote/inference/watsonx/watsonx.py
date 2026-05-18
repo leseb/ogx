@@ -95,8 +95,13 @@ class WatsonXInferenceAdapter(OpenAIMixin):
                 self._iam_refresh_tasks[api_key] = refresh_task
 
         try:
-            # Shield shared refresh work from request cancellation.
             return await asyncio.shield(refresh_task)
+        except RuntimeError:
+            logger.warning(
+                "Failed to exchange WatsonX IAM token, falling back to API key directly",
+                api_key_prefix=api_key[:8],
+            )
+            return api_key
         finally:
             if refresh_task.done():
                 async with self._iam_token_lock:
@@ -150,9 +155,7 @@ class WatsonXInferenceAdapter(OpenAIMixin):
         # _ensure_client() must be awaited before the first call to pre-populate the token.
         api_key = self._get_api_key_or_raise()
         cached = self._iam_token_cache.get(api_key)
-        if not cached or time.time() >= cached[1] - 60:
-            raise RuntimeError("WatsonX IAM token not available. Call _ensure_client() or _refresh_iam_token() first.")
-        iam_token = cached[0]
+        iam_token = cached[0] if cached and time.time() < cached[1] - 60 else api_key
 
         extra_params = self.get_extra_client_params()
         extra_params["http_client"] = DefaultAsyncHttpxClient(verify=self.shared_ssl_context)

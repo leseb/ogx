@@ -9,22 +9,16 @@
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from ogx.core.storage.datatypes import SqlStoreReference
 from ogx.providers.inline.batches.reference.batches import ReferenceBatchesImpl
 from ogx.providers.inline.batches.reference.config import ReferenceBatchesImplConfig
 from ogx_api import BatchObject, PaginatedResponse
-from ogx_api.batches.models import RetrieveBatchRequest
 
 
-@pytest.mark.asyncio
 async def test_reconcile_orphaned_batches_on_initialize():
     """Test that orphaned batches are reconciled on provider initialization."""
     # Create mock dependencies
-    config = ReferenceBatchesImplConfig(
-        sqlstore=SqlStoreReference(backend="sql_default", table_name="batches")
-    )
+    config = ReferenceBatchesImplConfig(sqlstore=SqlStoreReference(backend="sql_default", table_name="batches"))
     inference_api = MagicMock()
     files_api = MagicMock()
     models_api = MagicMock()
@@ -106,7 +100,7 @@ async def test_reconcile_orphaned_batches_on_initialize():
     assert sql_store.create_table.called
 
     # Verify fetch_all was called for each non-terminal status
-    fetch_calls = [call for call in sql_store.fetch_all.call_args_list]
+    fetch_calls = list(sql_store.fetch_all.call_args_list)
     assert len(fetch_calls) == 3
 
     # Verify update was called for each orphaned batch
@@ -138,13 +132,10 @@ async def test_reconcile_orphaned_batches_on_initialize():
             assert "cancelled_at" in batch_data
 
 
-@pytest.mark.asyncio
 async def test_no_orphaned_batches_on_initialize():
     """Test that initialization works when no orphaned batches exist."""
     # Create mock dependencies
-    config = ReferenceBatchesImplConfig(
-        sqlstore=SqlStoreReference(backend="sql_default", table_name="batches")
-    )
+    config = ReferenceBatchesImplConfig(sqlstore=SqlStoreReference(backend="sql_default", table_name="batches"))
     inference_api = MagicMock()
     files_api = MagicMock()
     models_api = MagicMock()
