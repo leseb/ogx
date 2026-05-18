@@ -309,7 +309,7 @@ def get_distribution_template(name: str = "starter") -> DistributionTemplate:
             default_provider_id="faiss",
             default_embedding_model=QualifiedModel(
                 provider_id="sentence-transformers",
-                model_id="nomic-ai/nomic-embed-text-v1.5",
+                model_id="all-MiniLM-L6-v2",
             ),
             default_reranker_model=RerankerModel(
                 provider_id="transformers",

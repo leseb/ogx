@@ -191,10 +191,11 @@ class TestConvertGeminiResponseToCompletion:
         result = convert_gemini_response_to_openai_completion(response, model="test-model", prompt="hi")
         logprobs = result.choices[0].logprobs
         assert logprobs is not None
-        assert logprobs.content is not None
-        assert len(logprobs.content) == 1
-        assert logprobs.content[0].token == "hello"
-        assert logprobs.content[0].logprob == -0.5
+        assert logprobs.tokens is not None
+        assert len(logprobs.tokens) == 1
+        assert logprobs.tokens[0] == "hello"
+        assert logprobs.token_logprobs is not None
+        assert logprobs.token_logprobs[0] == -0.5
 
     def test_completion_logprobs_none_when_absent(self):
         """Logprobs is None when candidate has no logprobs_result."""
@@ -271,10 +272,11 @@ class TestConvertGeminiStreamChunkToOpenAICompletion:
 
         logprobs = result.choices[0].logprobs
         assert logprobs is not None
-        assert logprobs.content is not None
-        assert len(logprobs.content) == 1
-        assert logprobs.content[0].token == "hello"
-        assert logprobs.content[0].logprob == -0.3
+        assert logprobs.tokens is not None
+        assert len(logprobs.tokens) == 1
+        assert logprobs.tokens[0] == "hello"
+        assert logprobs.token_logprobs is not None
+        assert logprobs.token_logprobs[0] == -0.3
 
     def test_stream_completion_chunk_empty_candidates(self):
         """Chunk with no candidates produces a single fallback choice with empty text."""
