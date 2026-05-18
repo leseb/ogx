@@ -44,7 +44,7 @@ def parse_toolgroup_from_toolgroup_name_pair(toolgroup_name_with_maybe_tool_name
 class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
     """Routing table for managing tool group registrations, tool indexing, and provider lookups."""
 
-    toolgroups_to_tools: dict[str, list[ToolDef]] = {}
+    toolgroups_to_tools: dict[tuple[str, str | None], list[ToolDef]] = {}
     tool_to_toolgroup: dict[str, str] = {}
 
     # overridden
@@ -71,7 +71,8 @@ class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
 
         all_tools = []
         for toolgroup in toolgroups:
-            if toolgroup.identifier not in self.toolgroups_to_tools:
+            cache_key = (toolgroup.identifier, authorization)
+            if cache_key not in self.toolgroups_to_tools:
                 try:
                     await self._index_tools(toolgroup, authorization=authorization)
                 except AuthenticationRequiredError:
@@ -84,7 +85,7 @@ class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
                     logger.warning("Error listing tools for toolgroup", identifier=toolgroup.identifier, error=str(e))
                     logger.debug(e, exc_info=True)
                     continue
-            all_tools.extend(self.toolgroups_to_tools[toolgroup.identifier])
+            all_tools.extend(self.toolgroups_to_tools[cache_key])
 
         return ListToolDefsResponse(data=all_tools)
 
@@ -98,7 +99,8 @@ class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
         for t in tooldefs:
             t.toolgroup_id = toolgroup.identifier
 
-        self.toolgroups_to_tools[toolgroup.identifier] = tooldefs
+        cache_key = (toolgroup.identifier, authorization)
+        self.toolgroups_to_tools[cache_key] = tooldefs
         for tool in tooldefs:
             self.tool_to_toolgroup[tool.name] = toolgroup.identifier
 
@@ -140,10 +142,16 @@ class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
         # the tools should first list the tools and then use them. but there are assumptions
         # baked in some of the code and tests right now.
         if not toolgroup.mcp_endpoint:
-            await self._index_tools(toolgroup)
+            await self._index_tools(toolgroup, authorization=None)
 
     async def unregister_toolgroup(self, toolgroup_id: str) -> None:
         await self.unregister_object(await self.get_tool_group(toolgroup_id))
+        keys_to_remove = [k for k in self.toolgroups_to_tools if k[0] == toolgroup_id]
+        for key in keys_to_remove:
+            for tool in self.toolgroups_to_tools[key]:
+                self.tool_to_toolgroup.pop(tool.name, None)
+            del self.toolgroups_to_tools[key]
 
     async def shutdown(self) -> None:
-        pass
+        self.toolgroups_to_tools.clear()
+        self.tool_to_toolgroup.clear()

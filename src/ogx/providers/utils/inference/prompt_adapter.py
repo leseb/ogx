@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from ogx.log import get_logger
-from ogx.providers.utils.common.url_validation import validate_url_not_private
+from ogx.providers.utils.common.url_validation import fetch_with_ssrf_protection
 from ogx_api import (
     ImageContentItem,
     OpenAIChatCompletionContentPartImageParam,
@@ -67,15 +67,13 @@ async def localize_image_content(uri: str) -> tuple[bytes, str] | None:
         Tuple of (raw_bytes, format_string) or None if URI scheme is unsupported
     """
     if uri.startswith("http"):
-        validate_url_not_private(uri)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
-            r = await client.get(uri)
-            content = r.content
-            content_type = r.headers.get("content-type")
-            if content_type:
-                format = content_type.split("/")[-1]
-            else:
-                format = "png"
+        r = await fetch_with_ssrf_protection(uri, timeout=httpx.Timeout(30.0, connect=10.0))
+        content = r.content
+        content_type = r.headers.get("content-type")
+        if content_type:
+            format = content_type.split("/")[-1]
+        else:
+            format = "png"
 
         return content, format
     elif uri.startswith("data"):

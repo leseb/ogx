@@ -6,7 +6,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl, SecretStr
+from pydantic import BaseModel, Field, HttpUrl, SecretStr, model_validator
 
 from ogx.core.storage.datatypes import KVStoreReference, SqlStoreReference
 from ogx_api import json_schema_type
@@ -32,6 +32,18 @@ class InfinispanVectorIOConfig(BaseModel):
         default=None,
         description="SQL store reference for tenant-isolated vector store metadata",
     )
+
+    @model_validator(mode="after")
+    def _validate_tls_consistency(self) -> "InfinispanVectorIOConfig":
+        url_scheme = str(self.url).split("://")[0] if self.url else "http"
+        url_is_https = url_scheme == "https"
+        if self.use_https and not url_is_https:
+            raise ValueError(
+                f"use_https=True but URL scheme is '{url_scheme}'. Use an https:// URL or set use_https=False."
+            )
+        if url_is_https and not self.use_https:
+            raise ValueError("URL uses https:// but use_https=False. Set use_https=True or use an http:// URL.")
+        return self
 
     @classmethod
     def sample_run_config(cls, __distro_dir__: str, **kwargs: Any) -> dict[str, Any]:

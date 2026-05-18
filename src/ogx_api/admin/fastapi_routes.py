@@ -13,7 +13,7 @@ all API-related code together.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Header, Path
 
 from ogx_api.connectors.models import (
     Connector,
@@ -150,10 +150,10 @@ def create_router(impl: Admin) -> APIRouter:
     async def get_connector_tool(
         connector_id: Annotated[str, Path(description="Identifier for the connector")],
         tool_name: Annotated[str, Path(description="Name of the tool")],
-        authorization: Annotated[str | None, Query(description="Authorization token")] = None,
+        x_connector_authorization: Annotated[str | None, Header(description="Connector authorization token")] = None,
     ) -> ToolDef:
         request = GetConnectorToolRequest(connector_id=connector_id, tool_name=tool_name)
-        return await impl.get_connector_tool(request, authorization=authorization)
+        return await impl.get_connector_tool(request, authorization=x_connector_authorization)
 
     @v1alpha_router.get(
         "/admin/connectors/{connector_id}/tools",
@@ -164,9 +164,9 @@ def create_router(impl: Admin) -> APIRouter:
     )
     async def list_connector_tools(
         request: Annotated[ListConnectorToolsRequest, Depends(list_connector_tools_request)],
-        authorization: Annotated[str | None, Query(description="Authorization token")] = None,
+        x_connector_authorization: Annotated[str | None, Header(description="Connector authorization token")] = None,
     ) -> ListToolsResponse:
-        return await impl.list_connector_tools(request, authorization=authorization)
+        return await impl.list_connector_tools(request, authorization=x_connector_authorization)
 
     @v1alpha_router.get(
         "/admin/connectors/{connector_id}",
@@ -177,9 +177,9 @@ def create_router(impl: Admin) -> APIRouter:
     )
     async def get_connector(
         request: Annotated[GetConnectorRequest, Depends(get_connector_request)],
-        authorization: Annotated[str | None, Query(description="Authorization token")] = None,
+        x_connector_authorization: Annotated[str | None, Header(description="Connector authorization token")] = None,
     ) -> Connector:
-        return await impl.get_connector(request, authorization=authorization)
+        return await impl.get_connector(request, authorization=x_connector_authorization)
 
     v1_router = APIRouter(
         prefix=f"/{OGX_API_V1}",

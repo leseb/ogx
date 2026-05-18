@@ -563,19 +563,19 @@ async def run_guardrails(
             resp = await client.post(moderation_endpoint, json={"input": messages})
             resp.raise_for_status()
         except httpx.HTTPError:
-            logger.warning("Failed to call moderation endpoint", endpoint=moderation_endpoint)
-            return None
+            logger.error("Failed to call moderation endpoint", endpoint=moderation_endpoint)
+            return "Content blocked: moderation service unavailable — failing closed for safety"
 
     data = resp.json()
     results = data.get("results")
     if not isinstance(results, list):
-        logger.warning(
+        logger.error(
             "Moderation endpoint returned unexpected format (expected OpenAI-compatible "
             "response with 'results' array, see https://platform.openai.com/docs/api-reference/moderations)",
             endpoint=moderation_endpoint,
             response_keys=list(data.keys()) if isinstance(data, dict) else type(data).__name__,
         )
-        return None
+        return "Content blocked: moderation service returned invalid response — failing closed for safety"
 
     for result in results:
         if not isinstance(result, dict):

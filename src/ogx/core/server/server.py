@@ -345,11 +345,22 @@ def create_app() -> StackApp:
             if content_encoding != "zstd":
                 return await self.app(scope, receive, send)
 
-            # Collect the full request body first (needed for both success and fallback)
+            # Collect the request body with a compressed size limit to prevent
+            # memory exhaustion from arbitrarily large payloads before decompression.
+            max_compressed_size = 50 * 1024 * 1024  # 50 MB
             body_parts: list[bytes] = []
+            compressed_size = 0
             while True:
                 message = await receive()
-                body_parts.append(message.get("body", b""))
+                chunk = message.get("body", b"")
+                compressed_size += len(chunk)
+                if compressed_size > max_compressed_size:
+                    return await _send_error_response(
+                        send,
+                        status=413,
+                        message=f"Compressed request body exceeds maximum allowed size of {max_compressed_size} bytes",
+                    )
+                body_parts.append(chunk)
                 if not message.get("more_body", False):
                     break
 

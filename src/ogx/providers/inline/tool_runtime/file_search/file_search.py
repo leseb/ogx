@@ -16,7 +16,7 @@ from pydantic import TypeAdapter
 
 from ogx.log import get_logger
 from ogx.providers.utils.common.data_url import parse_data_url
-from ogx.providers.utils.common.url_validation import validate_url_not_private
+from ogx.providers.utils.common.url_validation import fetch_with_ssrf_protection
 from ogx.providers.utils.inference.prompt_adapter import interleaved_content_as_str
 from ogx_api import (
     URL,
@@ -68,12 +68,9 @@ async def raw_data_from_doc(doc: RAGDocument) -> tuple[bytes, str]:
 
             return file_data, mime_type
         else:
-            validate_url_not_private(uri)
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
-                r = await client.get(uri)
-                r.raise_for_status()
-                mime_type = r.headers.get("content-type", "application/octet-stream")
-                return r.content, mime_type
+            r = await fetch_with_ssrf_protection(uri, timeout=httpx.Timeout(30.0, connect=10.0))
+            mime_type = r.headers.get("content-type", "application/octet-stream")
+            return r.content, mime_type
     else:
         if isinstance(doc.content, str):
             content_str = doc.content

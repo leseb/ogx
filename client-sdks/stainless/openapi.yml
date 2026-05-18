@@ -3377,16 +3377,16 @@ paths:
           description: Name of the tool
           title: Tool Name
         description: Name of the tool
-      - name: authorization
-        in: query
+      - name: x-connector-authorization
+        in: header
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Authorization token
-          title: Authorization
-        description: Authorization token
+          description: Connector authorization token
+          title: X-Connector-Authorization
+        description: Connector authorization token
   /v1alpha/admin/connectors/{connector_id}/tools:
     get:
       responses:
@@ -3423,16 +3423,16 @@ paths:
           description: Identifier for the connector
           title: Connector Id
         description: Identifier for the connector
-      - name: authorization
-        in: query
+      - name: x-connector-authorization
+        in: header
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Authorization token
-          title: Authorization
-        description: Authorization token
+          description: Connector authorization token
+          title: X-Connector-Authorization
+        description: Connector authorization token
   /v1alpha/admin/connectors/{connector_id}:
     get:
       responses:
@@ -3469,16 +3469,16 @@ paths:
           description: Identifier for the connector
           title: Connector Id
         description: Identifier for the connector
-      - name: authorization
-        in: query
+      - name: x-connector-authorization
+        in: header
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          description: Authorization token
-          title: Authorization
-        description: Authorization token
+          description: Connector authorization token
+          title: X-Connector-Authorization
+        description: Connector authorization token
   /v1/responses/compact:
     post:
       responses:

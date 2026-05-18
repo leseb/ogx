@@ -115,7 +115,7 @@ async def test_get_connector_returns_connector():
 
     get_endpoint = _get_endpoint(router, "/v1alpha/admin/connectors/{connector_id}", "GET")
     request = GetConnectorRequest(connector_id="test-connector")
-    response = await get_endpoint(request=request, authorization=None)
+    response = await get_endpoint(request=request, x_connector_authorization=None)
 
     assert response.connector_id == "test-connector"
     assert response.server_name == "Test Server"
@@ -134,7 +134,7 @@ async def test_get_connector_with_authorization():
 
     get_endpoint = _get_endpoint(router, "/v1alpha/admin/connectors/{connector_id}", "GET")
     request = GetConnectorRequest(connector_id="test-connector")
-    response = await get_endpoint(request=request, authorization="test-token")
+    response = await get_endpoint(request=request, x_connector_authorization="test-token")
 
     assert response.connector_id == "test-connector"
     # Verify authorization was passed to the impl
@@ -155,7 +155,7 @@ async def test_get_connector_not_found_raises_error():
     request = GetConnectorRequest(connector_id="nonexistent")
 
     with pytest.raises(ConnectorNotFoundError):
-        await get_endpoint(request=request, authorization=None)
+        await get_endpoint(request=request, x_connector_authorization=None)
 
 
 # --- List Connector Tools Tests ---
@@ -173,7 +173,7 @@ async def test_list_connector_tools_returns_tools():
 
     list_endpoint = _get_endpoint(router, "/v1alpha/admin/connectors/{connector_id}/tools", "GET")
     request = ListConnectorToolsRequest(connector_id="test-connector")
-    response = await list_endpoint(request=request, authorization=None)
+    response = await list_endpoint(request=request, x_connector_authorization=None)
 
     assert len(response.data) == 1
     assert response.data[0].name == "test-tool"
@@ -191,7 +191,7 @@ async def test_list_connector_tools_empty():
 
     list_endpoint = _get_endpoint(router, "/v1alpha/admin/connectors/{connector_id}/tools", "GET")
     request = ListConnectorToolsRequest(connector_id="test-connector")
-    response = await list_endpoint(request=request, authorization=None)
+    response = await list_endpoint(request=request, x_connector_authorization=None)
 
     assert response.data == []
 
@@ -208,7 +208,7 @@ async def test_list_connector_tools_with_authorization():
 
     list_endpoint = _get_endpoint(router, "/v1alpha/admin/connectors/{connector_id}/tools", "GET")
     request = ListConnectorToolsRequest(connector_id="test-connector")
-    _ = await list_endpoint(request=request, authorization="test-token")
+    _ = await list_endpoint(request=request, x_connector_authorization="test-token")
 
     call_args = impl.list_connector_tools.call_args
     assert call_args.kwargs.get("authorization") == "test-token"
@@ -231,7 +231,7 @@ async def test_get_connector_tool_returns_tool():
     response = await get_endpoint(
         connector_id="test-connector",
         tool_name="test-tool",
-        authorization=None,
+        x_connector_authorization=None,
     )
 
     assert response.name == "test-tool"
@@ -253,7 +253,7 @@ async def test_get_connector_tool_with_authorization():
     _ = await get_endpoint(
         connector_id="test-connector",
         tool_name="test-tool",
-        authorization="test-token",
+        x_connector_authorization="test-token",
     )
 
     call_args = impl.get_connector_tool.call_args
@@ -275,7 +275,7 @@ async def test_get_connector_tool_not_found_raises_error():
         await get_endpoint(
             connector_id="test-connector",
             tool_name="nonexistent-tool",
-            authorization=None,
+            x_connector_authorization=None,
         )
 
 
@@ -328,8 +328,8 @@ def test_openapi_schema_get_connector_has_path_param():
     assert "connector_id" in param_names
 
 
-def test_openapi_schema_has_authorization_query_param():
-    """Test that endpoints have authorization query parameter."""
+def test_openapi_schema_has_authorization_header_param():
+    """Test that endpoints have authorization header parameter."""
     impl = AsyncMock(spec=Connectors)
     app = FastAPI()
     router = create_router(impl)
@@ -339,6 +339,6 @@ def test_openapi_schema_has_authorization_query_param():
     get_connector_path = schema["paths"]["/v1alpha/admin/connectors/{connector_id}"]
 
     parameters = get_connector_path["get"]["parameters"]
-    auth_params = [p for p in parameters if p["name"] == "authorization"]
+    auth_params = [p for p in parameters if p["name"] == "x-connector-authorization"]
     assert len(auth_params) == 1
-    assert auth_params[0]["in"] == "query"
+    assert auth_params[0]["in"] == "header"

@@ -289,9 +289,15 @@ class SQLiteVecIndex(EmbeddingIndex):
         else:
             raise ValueError(f"Unknown filter type: {type(filter_obj)}")
 
+    _SAFE_FILTER_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+
     def _translate_comparison_filter(self, filter_obj: ComparisonFilter) -> tuple[str, list[Any]]:
         """Translate a comparison filter to SQL WHERE clause."""
         key, value, op_type = filter_obj.key, filter_obj.value, filter_obj.type
+        if not self._SAFE_FILTER_KEY_PATTERN.match(key):
+            raise ValueError(
+                f"Invalid filter key: {key!r} — only alphanumeric, underscore, and dot characters are allowed"
+            )
         json_path = f"$.metadata.{key}"
         expr = f"JSON_EXTRACT(m.chunk, '{json_path}')"
 
