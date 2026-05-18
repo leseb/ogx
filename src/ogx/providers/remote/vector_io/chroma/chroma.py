@@ -128,6 +128,7 @@ class ChromaIndex(EmbeddingIndex):
         query_string: str,
         k: int,
         score_threshold: float,
+        filters: Any = None,
     ) -> QueryChunksResponse:
         """
         Perform keyword search using Chroma's built-in where_document feature.
@@ -136,10 +137,15 @@ class ChromaIndex(EmbeddingIndex):
             query_string: The text query for keyword search
             k: Number of results to return
             score_threshold: Minimum similarity score threshold
+            filters: Optional filters (not yet supported)
 
         Returns:
             QueryChunksResponse with combined results
         """
+        # Filters are not yet implemented for Chroma provider
+        if filters is not None:
+            raise NotImplementedError("Chroma provider does not yet support native filtering")
+
         try:
             results = await maybe_await(
                 self.collection.query(
@@ -186,6 +192,7 @@ class ChromaIndex(EmbeddingIndex):
         score_threshold: float,
         reranker_type: str,
         reranker_params: dict[str, Any] | None = None,
+        filters: Any = None,
     ) -> QueryChunksResponse:
         """
         Hybrid search combining vector similarity and keyword search using configurable reranking.
@@ -196,6 +203,7 @@ class ChromaIndex(EmbeddingIndex):
             score_threshold: Minimum similarity score threshold
             reranker_type: Type of reranker to use ("rrf" or "weighted")
             reranker_params: Parameters for the reranker
+            filters: Optional filters (not yet supported)
         Returns:
             QueryChunksResponse with combined results
         """
@@ -203,8 +211,8 @@ class ChromaIndex(EmbeddingIndex):
             reranker_params = {}
 
         # Get results from both search methods
-        vector_response = await self.query_vector(embedding, k, score_threshold)
-        keyword_response = await self.query_keyword(query_string, k, score_threshold)
+        vector_response = await self.query_vector(embedding, k, score_threshold, filters)
+        keyword_response = await self.query_keyword(query_string, k, score_threshold, filters)
 
         # Convert responses to score dictionaries using chunk_id
         vector_scores = {
