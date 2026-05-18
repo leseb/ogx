@@ -7,6 +7,7 @@
 
 from ogx.core.datatypes import BuildProvider, Provider
 from ogx.distributions.template import DistributionTemplate, RunConfigSettings
+from ogx.providers.inline.file_processor.auto.config import AutoFileProcessorConfig
 from ogx.providers.inline.files.localfs.config import LocalfsFilesImplConfig
 from ogx.providers.remote.inference.watsonx import WatsonXConfig
 
@@ -34,6 +35,7 @@ def get_distribution_template(name: str = "watsonx") -> DistributionTemplate:
             BuildProvider(provider_type="remote::model-context-protocol"),
         ],
         "files": [BuildProvider(provider_type="inline::localfs")],
+        "file_processors": [BuildProvider(provider_type="inline::auto")],
     }
 
     inference_provider = Provider(
@@ -59,6 +61,13 @@ def get_distribution_template(name: str = "watsonx") -> DistributionTemplate:
                 provider_overrides={
                     "inference": [inference_provider],
                     "files": [files_provider],
+                    "file_processors": [
+                        Provider(
+                            provider_id="auto",
+                            provider_type="inline::auto",
+                            config=AutoFileProcessorConfig.sample_run_config(),
+                        ),
+                    ],
                 },
                 default_models=[],
             ),
