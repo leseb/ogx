@@ -5,6 +5,8 @@
 # the root directory of this source tree.
 
 
+import time
+
 import pytest
 
 from ogx.core.access_control.access_control import default_policy
@@ -17,6 +19,7 @@ from ogx.providers.inline.files.localfs import (
 from ogx_api import OpenAIFilePurpose, Order, ResourceNotFoundError
 from ogx_api.files.models import (
     DeleteFileRequest,
+    ExpiresAfter,
     ListFilesRequest,
     OpenAIFileObject,
     OpenAIFileUploadPurpose,
@@ -604,3 +607,88 @@ class TestOpenAIFilesAPI:
         first_page_ids = {f.id for f in first_page.data}
         second_page_ids = {f.id for f in second_page.data}
         assert first_page_ids.isdisjoint(second_page_ids)
+
+    async def test_upload_with_expires_after(self, files_provider, sample_text_file):
+        """Test that expires_after from the request is honored for computing expires_at."""
+        expires_after = ExpiresAfter(anchor="created_at", seconds=7200)
+        result = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS, expires_after=expires_after),
+            file=sample_text_file,
+        )
+
+        assert result.expires_at is not None
+        assert result.expires_at == result.created_at + 7200
+
+    async def test_upload_without_expires_after_uses_ttl_secs(self, files_provider, sample_text_file):
+        """Test that ttl_secs config is used as fallback when expires_after is not provided."""
+        result = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS),
+            file=sample_text_file,
+        )
+
+        assert result.expires_at is not None
+        assert result.expires_at == result.created_at + files_provider.config.ttl_secs
+
+    async def test_retrieve_expired_file_raises_not_found(self, files_provider, sample_text_file):
+        """Test that retrieving an expired file raises not found."""
+        expires_after = ExpiresAfter(anchor="created_at", seconds=3600)
+        uploaded = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS, expires_after=expires_after),
+            file=sample_text_file,
+        )
+
+        # Manually set expires_at to the past in the database
+        assert files_provider.sql_store is not None
+        await files_provider.sql_store.update(
+            "openai_files",
+            data={"expires_at": int(time.time()) - 1},
+            where={"id": uploaded.id},
+        )
+
+        with pytest.raises(ResourceNotFoundError, match="not found"):
+            await files_provider.openai_retrieve_file(request=RetrieveFileRequest(file_id=uploaded.id))
+
+    async def test_retrieve_content_expired_file_raises_not_found(self, files_provider, sample_text_file):
+        """Test that retrieving content of an expired file raises not found."""
+        expires_after = ExpiresAfter(anchor="created_at", seconds=3600)
+        uploaded = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS, expires_after=expires_after),
+            file=sample_text_file,
+        )
+
+        assert files_provider.sql_store is not None
+        await files_provider.sql_store.update(
+            "openai_files",
+            data={"expires_at": int(time.time()) - 1},
+            where={"id": uploaded.id},
+        )
+
+        with pytest.raises(ResourceNotFoundError, match="not found"):
+            await files_provider.openai_retrieve_file_content(
+                request=RetrieveFileContentRequest(file_id=uploaded.id)
+            )
+
+    async def test_list_files_excludes_expired(self, files_provider, sample_text_file):
+        """Test that expired files are excluded from list results."""
+        expires_after = ExpiresAfter(anchor="created_at", seconds=3600)
+        expired_file = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS, expires_after=expires_after),
+            file=sample_text_file,
+        )
+        active_file = await files_provider.openai_upload_file(
+            request=UploadFileRequest(purpose=OpenAIFilePurpose.ASSISTANTS),
+            file=sample_text_file,
+        )
+
+        # Expire the first file
+        assert files_provider.sql_store is not None
+        await files_provider.sql_store.update(
+            "openai_files",
+            data={"expires_at": int(time.time()) - 1},
+            where={"id": expired_file.id},
+        )
+
+        result = await files_provider.openai_list_files(request=ListFilesRequest())
+        file_ids = [f.id for f in result.data]
+        assert active_file.id in file_ids
+        assert expired_file.id not in file_ids

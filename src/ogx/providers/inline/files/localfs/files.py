@@ -136,6 +136,11 @@ class LocalfsFilesImpl(Files):
         if not row:
             raise OpenAIFileObjectNotFoundError(file_id)
 
+        expires_at = row.get("expires_at")
+        if expires_at is not None and int(time.time()) >= expires_at:
+            logger.info("File has expired", file_id=file_id, expires_at=expires_at)
+            raise OpenAIFileObjectNotFoundError(file_id)
+
         file_path = Path(row.pop("file_path"))
         file_path = self._validate_path_containment(file_path)
         return OpenAIFileObject(**row, status="processed", status_details=""), file_path
@@ -153,12 +158,6 @@ class LocalfsFilesImpl(Files):
         purpose = request.purpose
         expires_after = request.expires_after
 
-        if expires_after is not None:
-            logger.warning(
-                "File expiration is not supported by this provider, ignoring expires_after",
-                expires_after=expires_after,
-            )
-
         file_id = self._generate_file_id()
         file_path = self._get_file_path(file_id)
         sanitized_name = sanitize_content_disposition_filename(file.filename or "uploaded_file")
@@ -173,7 +172,8 @@ class LocalfsFilesImpl(Files):
         await asyncio.to_thread(_write_file)
 
         created_at = int(time.time())
-        expires_at = created_at + self.config.ttl_secs
+        ttl = expires_after.seconds if expires_after is not None else self.config.ttl_secs
+        expires_at = created_at + ttl
 
         await self.sql_store.insert(
             "openai_files",
@@ -227,6 +227,7 @@ class LocalfsFilesImpl(Files):
             limit=limit,
         )
 
+        now = int(time.time())
         files = [
             OpenAIFileObject(
                 id=row["id"],
@@ -239,6 +240,7 @@ class LocalfsFilesImpl(Files):
                 status_details="",
             )
             for row in paginated_result.data
+            if row.get("expires_at") is None or now < row["expires_at"]
         ]
 
         return ListOpenAIFileResponse(
