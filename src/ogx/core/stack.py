@@ -744,32 +744,32 @@ class Stack:
         from ogx.core.storage.sqlstore.sqlstore import set_sqlstore_init_phase
 
         set_sqlstore_init_phase(True)
+        try:
+            stores = self.run_config.storage.stores
+            if not stores.metadata:
+                raise ValueError("storage.stores.metadata must be configured with a kv_* backend")
+            dist_registry, _ = await create_dist_registry(stores.metadata, self.run_config.distro_name)
+            policy = self.run_config.server.auth.access_policy if self.run_config.server.auth else []
 
-        stores = self.run_config.storage.stores
-        if not stores.metadata:
-            raise ValueError("storage.stores.metadata must be configured with a kv_* backend")
-        dist_registry, _ = await create_dist_registry(stores.metadata, self.run_config.distro_name)
-        policy = self.run_config.server.auth.access_policy if self.run_config.server.auth else []
+            internal_impls = {}
+            add_internal_implementations(internal_impls, self.run_config, policy)
 
-        internal_impls = {}
-        add_internal_implementations(internal_impls, self.run_config, policy)
+            # Register internal SQL tables before resolve_impls — provider initialize()
+            # hooks may issue queries that bind the shared engine, after which tables
+            # registered later are never created.
+            for api in (Api.prompts, Api.conversations, Api.connectors):
+                if api in internal_impls:
+                    await internal_impls[api].initialize()
 
-        # Register internal SQL tables before resolve_impls — provider initialize()
-        # hooks may issue queries that bind the shared engine, after which tables
-        # registered later are never created.
-        for api in (Api.prompts, Api.conversations, Api.connectors):
-            if api in internal_impls:
-                await internal_impls[api].initialize()
-
-        self.impls = await resolve_impls(
-            self.run_config,
-            self.provider_registry or get_provider_registry(self.run_config),
-            dist_registry,
-            policy,
-            internal_impls,
-        )
-
-        set_sqlstore_init_phase(False)
+            self.impls = await resolve_impls(
+                self.run_config,
+                self.provider_registry or get_provider_registry(self.run_config),
+                dist_registry,
+                policy,
+                internal_impls,
+            )
+        finally:
+            set_sqlstore_init_phase(False)
 
     async def start(self):
         """Run post-resolution setup with SQL data operations.

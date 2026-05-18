@@ -54,7 +54,7 @@ class AdminImplConfig(BaseModel):
     config: StackConfig
 
 
-async def get_provider_impl(config: AdminImplConfig, deps: dict[str, Any]) -> "AdminImpl":
+async def get_provider_impl(config: AdminImplConfig, deps: dict[Api | str, Any]) -> "AdminImpl":
     """Create and initialize an AdminImpl instance.
 
     Args:
@@ -72,9 +72,13 @@ async def get_provider_impl(config: AdminImplConfig, deps: dict[str, Any]) -> "A
 class AdminImpl(Admin):
     """Implementation of the Admin API providing provider management, route listing, health, and version endpoints."""
 
-    def __init__(self, config: AdminImplConfig, deps: dict[str, Any]) -> None:
+    def __init__(self, config: AdminImplConfig, deps: dict[Api | str, Any]) -> None:
         self.config = config
         self.deps = deps
+
+    def _get_dep(self, api: Api) -> Any | None:
+        """Read deps for both Api-keyed and string-keyed maps."""
+        return self.deps.get(api) or self.deps.get(api.value)
 
     async def initialize(self) -> None:
         pass
@@ -228,11 +232,10 @@ class AdminImpl(Admin):
         return ListRoutesResponse(data=ret)
 
     async def health(self) -> HealthInfo:
-        if Api.inference.value in self.deps:
-            inference_router = self.deps[Api.inference.value]
-            store = getattr(inference_router, "store", None)
-            if store and getattr(store, "_write_error_count", 0) > 0:
-                return HealthInfo(status=HealthStatus.ERROR)
+        inference_router = self._get_dep(Api.inference)
+        store = getattr(inference_router, "store", None)
+        if store and getattr(store, "_write_error_count", 0) > 0:
+            return HealthInfo(status=HealthStatus.ERROR)
         return HealthInfo(status=HealthStatus.OK)
 
     async def version(self) -> VersionInfo:
@@ -240,7 +243,7 @@ class AdminImpl(Admin):
 
     @property
     def _connectors(self) -> Connectors:
-        return cast(Connectors, self.deps[Api.connectors.value])
+        return cast(Connectors, self._get_dep(Api.connectors))
 
     # Connector delegation methods
     async def list_connectors(self) -> ListConnectorsResponse:
@@ -259,7 +262,7 @@ class AdminImpl(Admin):
 
     @property
     def _tool_groups(self) -> ToolGroups:
-        return cast(ToolGroups, self.deps[Api.tool_groups.value])
+        return cast(ToolGroups, self._get_dep(Api.tool_groups))
 
     async def list_tools(self, request: ListToolsRequest) -> ListToolDefsResponse:
         return await self._tool_groups.list_tools(request)

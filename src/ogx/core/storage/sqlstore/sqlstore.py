@@ -23,6 +23,7 @@ sql_store_pip_packages = ["sqlalchemy[asyncio]", "aiosqlite", "asyncpg"]
 _SQLSTORE_BACKENDS: dict[str, StorageBackendConfig] = {}
 _SQLSTORE_INSTANCES: dict[str, SqlStore] = {}
 _SQLSTORE_LOCKS: dict[str, asyncio.Lock] = {}
+_SQLSTORE_INIT_PHASE: bool = False
 
 
 SqlStoreConfig = Annotated[
@@ -80,6 +81,8 @@ async def _sqlstore_impl(reference: SqlStoreReference) -> SqlStore:
 
             config = cast(SqliteSqlStoreConfig | PostgresSqlStoreConfig, backend_config).model_copy()
             instance = SqlAlchemySqlStoreImpl(config)
+            if hasattr(instance, "_set_init_phase"):
+                instance._set_init_phase(_SQLSTORE_INIT_PHASE)
             _SQLSTORE_INSTANCES[backend_name] = instance
             return instance
         else:
@@ -90,10 +93,12 @@ def register_sqlstore_backends(backends: dict[str, StorageBackendConfig]) -> Non
     """Register the set of available SQL store backends for reference resolution."""
     global _SQLSTORE_BACKENDS
     global _SQLSTORE_INSTANCES
+    global _SQLSTORE_INIT_PHASE
 
     _SQLSTORE_BACKENDS.clear()
     _SQLSTORE_INSTANCES.clear()
     _SQLSTORE_LOCKS.clear()
+    _SQLSTORE_INIT_PHASE = False
     for name, cfg in backends.items():
         _SQLSTORE_BACKENDS[name] = cfg
 
@@ -105,6 +110,8 @@ def set_sqlstore_init_phase(active: bool) -> None:
     the engine would be bound to the temporary event loop used by
     Stack.initialize() rather than uvicorn's request-handling loop.
     """
+    global _SQLSTORE_INIT_PHASE
+    _SQLSTORE_INIT_PHASE = active
     for instance in _SQLSTORE_INSTANCES.values():
         if hasattr(instance, "_set_init_phase"):
             instance._set_init_phase(active)

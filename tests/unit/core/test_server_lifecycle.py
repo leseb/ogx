@@ -103,6 +103,27 @@ def test_set_sqlstore_init_phase_propagates(tmp_path):
     assert store._init_phase is False
 
 
+def test_set_sqlstore_init_phase_applies_to_new_instances(tmp_path):
+    """set_sqlstore_init_phase() applies to stores created after the flag is set."""
+    db_path = str(tmp_path / "test.db")
+    register_sqlstore_backends({"sql_default": SqliteSqlStoreConfig(db_path=db_path)})
+
+    set_sqlstore_init_phase(True)
+
+    async def create():
+        from ogx.core.storage.sqlstore.sqlstore import _sqlstore_impl
+
+        return await _sqlstore_impl(
+            type("Ref", (), {"backend": "sql_default", "table_name": "t"})()  # type: ignore[arg-type]
+        )
+
+    store = asyncio.run(create())
+    assert store._init_phase is True
+
+    set_sqlstore_init_phase(False)
+    assert store._init_phase is False
+
+
 def test_prepare_does_not_create_engine(tmp_path):
     """Simulates prepare() phase: table registration does not trigger engine creation."""
     db_path = str(tmp_path / "test.db")
