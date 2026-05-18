@@ -116,7 +116,7 @@ class TestVectorStoresAccessControl:
         token = get_auth_token("BOB_TOKEN", "token-bob")
         return VectorStoresClient(str(ogx_client.base_url), token)
 
-    EMBEDDING_MODEL = "sentence-transformers/nomic-ai/nomic-embed-text-v1.5"
+    EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
     def _create_store(self, client: VectorStoresClient, name: str = "test-store") -> str:
         data = client.create(name, embedding_model=self.EMBEDDING_MODEL)

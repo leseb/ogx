@@ -335,7 +335,7 @@ def instantiate_ogx_client(session):
             embedding_model_opt = session.config.getoption("embedding_model") or ""
             # Model identifiers are in provider_id/model_id format; extract the provider.
             provider_id = embedding_model_opt.split("/")[0] if "/" in embedding_model_opt else "sentence-transformers"
-            passed_model = extract_model(session.config.getoption("embedding_model"), "nomic-ai/nomic-embed-text-v1.5")
+            passed_model = extract_model(session.config.getoption("embedding_model"), "all-MiniLM-L6-v2")
             passed_emb = session.config.getoption("embedding_dimension")
 
             rerank_model_opt = session.config.getoption("rerank_model") or ""
