@@ -169,7 +169,7 @@ def get_distribution_template(name: str = "starter") -> DistributionTemplate:
     embedding_provider = Provider(
         provider_id="sentence-transformers",
         provider_type="inline::sentence-transformers",
-        config=SentenceTransformersInferenceConfig.sample_run_config(),
+        config=SentenceTransformersInferenceConfig(trust_remote_code=True).model_dump(),
     )
     reranker_provider = Provider(
         provider_id="transformers",

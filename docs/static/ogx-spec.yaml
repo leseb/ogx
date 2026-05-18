@@ -9201,6 +9201,7 @@ components:
       properties:
         chunk_overlap_tokens:
           type: integer
+          minimum: 0.0
           title: Chunk Overlap Tokens
           default: 400
         max_chunk_size_tokens:

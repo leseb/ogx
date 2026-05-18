@@ -492,6 +492,16 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoc
         self._policy = policy or []
 
     async def initialize(self) -> None:
+        if isinstance(self.config, RemoteMilvusVectorIOConfig):
+            logger.info("Connecting to Milvus server at", uri=self.config.uri)
+            self.client = MilvusClient(
+                **self.config.model_dump(exclude_none=True, exclude={"persistence", "metadata_store"})
+            )
+        else:
+            logger.info("Connecting to Milvus Lite at", db_path=self.config.db_path)
+            uri = os.path.expanduser(self.config.db_path)
+            self.client = MilvusClient(uri=uri)
+
         self.kvstore = await kvstore_impl(self.config.persistence)
 
         if self.config.metadata_store:
@@ -518,15 +528,6 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoc
                 inference_api=self.inference_api,
             )
             self.cache[vector_store.identifier] = index
-        if isinstance(self.config, RemoteMilvusVectorIOConfig):
-            logger.info("Connecting to Milvus server at", uri=self.config.uri)
-            self.client = MilvusClient(
-                **self.config.model_dump(exclude_none=True, exclude={"persistence", "metadata_store"})
-            )
-        else:
-            logger.info("Connecting to Milvus Lite at", db_path=self.config.db_path)
-            uri = os.path.expanduser(self.config.db_path)
-            self.client = MilvusClient(uri=uri)
 
         # Load existing OpenAI vector stores into the in-memory cache
         await self.initialize_openai_vector_stores()
@@ -537,6 +538,11 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoc
         await super().shutdown()
 
     async def register_vector_store(self, vector_store: VectorStore) -> None:
+        if self.kvstore is None:
+            raise RuntimeError("KVStore not initialized. Call initialize() before registering vector stores.")
+        key = f"{VECTOR_DBS_PREFIX}{vector_store.identifier}"
+        await self.kvstore.set(key=key, value=vector_store.model_dump_json())
+
         use_native_hybrid = isinstance(self.config, RemoteMilvusVectorIOConfig)
         if isinstance(self.config, RemoteMilvusVectorIOConfig):
             consistency_level = self.config.consistency_level
@@ -587,6 +593,10 @@ class MilvusVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoc
         if vector_store_id in self.cache:
             await self.cache[vector_store_id].index.delete()
             del self.cache[vector_store_id]
+
+        if self.kvstore is None:
+            raise RuntimeError("KVStore not initialized. Call initialize() before using vector stores.")
+        await self.kvstore.delete(f"{VECTOR_DBS_PREFIX}{vector_store_id}")
 
     async def insert_chunks(self, request: InsertChunksRequest) -> None:
         index = await self._get_and_cache_vector_store_index(request.vector_store_id)

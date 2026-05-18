@@ -325,7 +325,12 @@ class PGVectorIndex(EmbeddingIndex):
             scores = []
             for row in rows:
                 dist = row["distance"]
-                score = 1.0 / float(dist) if dist != 0 else float("inf")
+                # For INNER_PRODUCT, pgvector returns -<inner_product>, so negate to get score
+                # For distance metrics (L2, L1, COSINE), convert distance to similarity score
+                if self.distance_metric == "INNER_PRODUCT":
+                    score = -float(dist)
+                else:
+                    score = 1.0 / (1.0 + float(dist))
                 if score < score_threshold:
                     continue
                 doc = row["document"]

@@ -18,6 +18,28 @@ from ogx.log import get_logger
 log = get_logger(name=__name__, category="core")
 
 
+def _parse_bool(value: str) -> bool:
+    """Parse a string to a boolean value.
+
+    Args:
+        value: String to parse (case-insensitive).
+
+    Returns:
+        True if value is "true", "1", "yes", "y", or "on".
+        False if value is "false", "0", "no", "n", or "off".
+
+    Raises:
+        ValueError: If value cannot be parsed as a boolean.
+    """
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes", "y", "on"):
+        return True
+    elif normalized in ("false", "0", "no", "n", "off"):
+        return False
+    else:
+        raise ValueError(f"Cannot parse '{value}' as boolean")
+
+
 def is_list_of_primitives(field_type: Any) -> bool:
     """Check if a field type is a List of primitive types."""
     origin = get_origin(field_type)
@@ -185,7 +207,7 @@ def prompt_for_config(config_type: type[BaseModel], existing_config: BaseModel |
     for field_name, field in config_type.__fields__.items():  # type: ignore[attr-defined]
         field_type = field.annotation
         existing_value = getattr(existing_config, field_name) if existing_config else None
-        if existing_value:
+        if existing_value is not None:
             default_value = existing_value
         else:
             default_value = field.default if not isinstance(field.default, PydanticUndefinedType) else None
@@ -309,6 +331,8 @@ def prompt_for_config(config_type: type[BaseModel], existing_config: BaseModel |
                             import ast
 
                             value = field_type(**ast.literal_eval(user_input))
+                        elif field_type is bool:
+                            value = _parse_bool(user_input)
                         else:
                             value = field_type(user_input)
 

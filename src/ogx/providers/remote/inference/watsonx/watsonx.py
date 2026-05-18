@@ -119,8 +119,7 @@ class WatsonXInferenceAdapter(OpenAIMixin):
                 self._iam_token_cache[api_key] = (token, expiry)
                 return token
         except Exception as e:
-            logger.warning("IAM token exchange failed, using API key directly", error=str(e))
-            return api_key
+            raise RuntimeError("Failed to exchange WatsonX IAM token") from e
 
     def _get_api_key_or_raise(self) -> str:
         api_key = self._get_api_key_from_config_or_provider_data()
@@ -151,7 +150,9 @@ class WatsonXInferenceAdapter(OpenAIMixin):
         # _ensure_client() must be awaited before the first call to pre-populate the token.
         api_key = self._get_api_key_or_raise()
         cached = self._iam_token_cache.get(api_key)
-        iam_token = cached[0] if cached and time.time() < cached[1] - 60 else api_key
+        if not cached or time.time() >= cached[1] - 60:
+            raise RuntimeError("WatsonX IAM token not available. Call _ensure_client() or _refresh_iam_token() first.")
+        iam_token = cached[0]
 
         extra_params = self.get_extra_client_params()
         extra_params["http_client"] = DefaultAsyncHttpxClient(verify=self.shared_ssl_context)

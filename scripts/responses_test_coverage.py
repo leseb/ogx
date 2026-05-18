@@ -306,7 +306,18 @@ def _get_call_chain(node: ast.Call) -> str | None:
 
 
 def _is_openai_call(chain: str) -> bool:
-    return any(chain.startswith(c) for c in ("openai_client.", "alice_client.", "bob_client.", "self."))
+    return any(
+        chain.startswith(c)
+        for c in (
+            "openai_client.",
+            "alice_client.",
+            "bob_client.",
+            "responses_client.",
+            "client_with_models.",
+            "responses_client_with_prompts.",
+            "self.",
+        )
+    )
 
 
 def _strip_client_prefix(chain: str) -> str:
@@ -381,7 +392,17 @@ def _extract_openai_test_functions(filepath: Path) -> list[tuple[str, ast.AST]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith("test_"):
             arg_names = [arg.arg for arg in node.args.args]
-            if any(a in arg_names for a in ("openai_client", "alice_client", "bob_client")):
+            if any(
+                a in arg_names
+                for a in (
+                    "openai_client",
+                    "alice_client",
+                    "bob_client",
+                    "responses_client",
+                    "client_with_models",
+                    "responses_client_with_prompts",
+                )
+            ):
                 location = f"{filepath.relative_to(ROOT)}:{node.lineno}::{node.name}"
                 results.append((location, node))
     return results

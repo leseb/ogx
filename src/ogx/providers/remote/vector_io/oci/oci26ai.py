@@ -243,7 +243,7 @@ class OCI26aiIndex(EmbeddingIndex):
                     metadata,
                     chunk_metadata,
                     vector,
-                    VECTOR_DISTANCE(vector, :query_vector, COSINE) AS score
+                    (1.0 - VECTOR_DISTANCE(vector, :query_vector, COSINE)) AS score
                 FROM {self.table_name}
             )
         """

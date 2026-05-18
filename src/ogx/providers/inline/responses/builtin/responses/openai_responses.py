@@ -1479,7 +1479,9 @@ class OpenAIResponsesImpl:
 
             # Use provider-reported token count when available, fall back to tiktoken estimate
             if previous_usage and previous_usage.total_tokens:
-                token_count = previous_usage.total_tokens
+                # On follow-up turns, count both previous context AND new turn's estimated tokens
+                new_turn_tokens = self._count_tokens(input, model=model, extra_body=extra_body)
+                token_count = previous_usage.total_tokens + new_turn_tokens
             else:
                 token_count = self._count_tokens(input, model=model, extra_body=extra_body)
             if token_count > threshold:

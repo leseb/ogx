@@ -17,8 +17,10 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    and_,
     event,
     inspect,
+    or_,
     select,
     text,
 )
@@ -284,21 +286,41 @@ class SqlAlchemySqlStoreImpl(SqlStore):
                 if cursor_key_column not in table_obj.c:
                     raise ValueError(f"Cursor key column '{cursor_key_column}' not found in table '{table}'")
 
-                # Get cursor value for the order column
-                cursor_query = select(table_obj.c[order_column]).where(table_obj.c[cursor_key_column] == cursor_id)
+                # Get cursor values for both the order column and the key column
+                cursor_query = select(table_obj.c[order_column], table_obj.c[cursor_key_column]).where(
+                    table_obj.c[cursor_key_column] == cursor_id
+                )
                 cursor_result = await session.execute(cursor_query)
                 cursor_row = cursor_result.fetchone()
 
                 if not cursor_row:
                     raise ValueError(f"Record with {cursor_key_column}='{cursor_id}' not found in table '{table}'")
 
-                cursor_value = cursor_row[0]
+                cursor_sort_value = cursor_row[0]
+                cursor_key_value = cursor_row[1]
 
-                # Apply cursor condition based on sort direction
+                # Apply cursor condition with tie-breaker to handle non-unique sort keys
+                # Use tuple comparison: (sort_col, key_col) > (cursor_sort, cursor_key)
                 if order_direction == "desc":
-                    query = query.where(table_obj.c[order_column] < cursor_value)
+                    query = query.where(
+                        or_(
+                            table_obj.c[order_column] < cursor_sort_value,
+                            and_(
+                                table_obj.c[order_column] == cursor_sort_value,
+                                table_obj.c[cursor_key_column] < cursor_key_value,
+                            ),
+                        )
+                    )
                 else:
-                    query = query.where(table_obj.c[order_column] > cursor_value)
+                    query = query.where(
+                        or_(
+                            table_obj.c[order_column] > cursor_sort_value,
+                            and_(
+                                table_obj.c[order_column] == cursor_sort_value,
+                                table_obj.c[cursor_key_column] > cursor_key_value,
+                            ),
+                        )
+                    )
 
             # Apply ordering
             if order_by:
@@ -320,6 +342,24 @@ class SqlAlchemySqlStoreImpl(SqlStore):
                         query = query.order_by(table_obj.c[name].desc())
                     else:
                         raise ValueError(f"Invalid order '{order_type}' for column '{name}'")
+
+                # Add tie-breaker for single-column ordering to handle non-unique sort keys
+                # This ensures consistent ordering across pages for cursor pagination
+                if len(order_by) == 1:
+                    order_column, order_type = order_by[0]
+                    # Determine tie-breaker column: use cursor key if provided, otherwise default to 'id'
+                    tie_breaker_column = None
+                    if cursor:
+                        tie_breaker_column, _ = cursor
+                    elif "id" in table_obj.c:
+                        tie_breaker_column = "id"
+
+                    # Only add tie-breaker if it's different from the primary sort column
+                    if tie_breaker_column and tie_breaker_column != order_column:
+                        if order_type == "asc":
+                            query = query.order_by(table_obj.c[tie_breaker_column].asc())
+                        else:
+                            query = query.order_by(table_obj.c[tie_breaker_column].desc())
 
             # Fetch limit + 1 to determine has_more
             fetch_limit = limit

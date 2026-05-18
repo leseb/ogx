@@ -131,11 +131,13 @@ def create_api_client_class(protocol: type[Any]) -> type[Any]:
                     break
                 kwargs[param.name] = args[i]
 
+            # Get the protocol method to check for multiple webmethod decorators
+            protocol_method = getattr(protocol, method_name)
             # Get all webmethods for this method (supports multiple decorators)
-            webmethods = getattr(method, "__webmethods__", [])
+            webmethods = getattr(protocol_method, "__webmethods__", [])
 
             if not webmethods:
-                raise RuntimeError(f"Method {method} has no webmethod decorators")
+                raise RuntimeError(f"Method {method_name} has no webmethod decorators")
 
             # Choose the preferred webmethod (non-deprecated if available)
             preferred_webmethod = None

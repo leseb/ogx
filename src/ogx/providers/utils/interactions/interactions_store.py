@@ -50,9 +50,18 @@ class InteractionsStore:
         created_at: int,
         model: str,
         messages: list[dict[str, Any]],
-        output_text: str,
+        assistant_message: dict[str, Any],
     ) -> None:
-        """Persist a completed interaction for future chaining."""
+        """Persist a completed interaction for future chaining.
+
+        Args:
+            interaction_id: Unique identifier for the interaction
+            created_at: Unix timestamp when the interaction was created
+            model: Model identifier used for the interaction
+            messages: List of messages in OpenAI format (user, system, tool, etc.)
+            assistant_message: The assistant's response in OpenAI message format,
+                including content, tool_calls, etc.
+        """
         await self.sql_store.insert(
             self.reference.table_name,
             {
@@ -61,7 +70,7 @@ class InteractionsStore:
                 "model": model,
                 "interaction_data": {
                     "messages": messages,
-                    "output_text": output_text,
+                    "assistant_message": assistant_message,
                 },
             },
         )
@@ -69,7 +78,7 @@ class InteractionsStore:
     async def get_interaction(self, interaction_id: str) -> dict[str, Any] | None:
         """Retrieve a stored interaction by ID.
 
-        Returns the ``interaction_data`` dict (messages + output_text), or
+        Returns the ``interaction_data`` dict (messages + assistant_message), or
         ``None`` if not found.
         """
         row = await self.sql_store.fetch_one(

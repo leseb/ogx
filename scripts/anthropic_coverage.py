@@ -367,8 +367,11 @@ def calculate_coverage(
         category_properties[cat_name] = max(cat_props, cat_problems)
         total_properties += category_properties[cat_name]
 
-    total_problems = total_issues + total_missing
-    total_properties = max(total_properties, total_problems)
+    # Count properties from missing endpoints
+    missing_properties = _count_endpoint_properties(anthropic_spec_data, missing_endpoints)
+
+    total_problems = total_issues + total_missing + missing_properties
+    total_properties = max(total_properties + missing_properties, total_problems)
 
     if total_properties > 0:
         overall_score = round((1 - total_problems / total_properties) * 100, 1)

@@ -1,6 +1,7 @@
 version: 2
 distro_name: open-benchmark
 apis:
+- files
 - inference
 - responses
 - tool_runtime
@@ -64,6 +65,14 @@ providers:
       persistence:
         namespace: vector_io::pgvector
         backend: kv_default
+  files:
+  - provider_id: builtin-files
+    provider_type: inline::localfs
+    config:
+      storage_dir: ${env.FILES_STORAGE_DIR:=~/.ogx/distributions/open-benchmark/files}
+      metadata_store:
+        table_name: files_metadata
+        backend: sql_default
   responses:
   - provider_id: builtin
     provider_type: inline::builtin

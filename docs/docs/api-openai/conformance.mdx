@@ -27,16 +27,16 @@ This documentation is auto-generated from the OpenAI API specification compariso
 
 ## Integration Test Coverage
 
-Overall Test Coverage Score: 42.9%
+Overall Test Coverage Score: 55.4%
 
 | Category | Covered | Total | Score |
 |----------|---------|-------|-------|
-| CRUD Operations | 5 | 7 | 71.4% |
+| CRUD Operations | 6 | 7 | 85.7% |
 | Conversations | 5 | 9 | 55.6% |
-| Request Parameters | 20 | 25 | 80.0% |
-| Streaming Events | 16 | 53 | 30.2% |
-| Structured Output | 0 | 2 | 0.0% |
-| Tools | 2 | 16 | 12.5% |
+| Request Parameters | 23 | 25 | 92.0% |
+| Streaming Events | 22 | 53 | 41.5% |
+| Structured Output | 1 | 2 | 50.0% |
+| Tools | 5 | 16 | 31.2% |
 
 ## Category Scores
 
@@ -718,7 +718,7 @@ Below is a detailed breakdown of conformance issues and missing properties for e
 | `requestBody.content.application/json.properties.store` | Default changed: None -&gt; True | Yes |
 | `requestBody.content.application/json.properties.stream` | Default changed: None -&gt; False | Yes |
 | `requestBody.content.application/json.properties.stream_options` | Union variants added: 1; Union variants removed: 1 | No |
-| `requestBody.content.application/json.properties.text` | Union variants added: 1; Union variants removed: 1 | No |
+| `requestBody.content.application/json.properties.text` | Union variants added: 1; Union variants removed: 1 | Yes |
 | `requestBody.content.application/json.properties.tool_choice` | Union variants added: 2; Union variants removed: 1 | Yes |
 | `requestBody.content.application/json.properties.truncation` | Union variants added: 2 | Yes |
 | `responses.200.content.application/json.properties.error` | Union variants added: 1; Union variants removed: 1 | Yes |
@@ -727,7 +727,7 @@ Below is a detailed breakdown of conformance issues and missing properties for e
 | `responses.200.content.application/json.properties.output.items` | Union variants added: 8; Union variants removed: 4 | Yes |
 | `responses.200.content.application/json.properties.parallel_tool_calls` | Default changed: None -&gt; True | Yes |
 | `responses.200.content.application/json.properties.reasoning` | Union variants added: 1; Union variants removed: 1 | Yes |
-| `responses.200.content.application/json.properties.text` | Type added: ['object']; Default changed: None -&gt; \{'format': \{'type': 'text'\}\} | No |
+| `responses.200.content.application/json.properties.text` | Type added: ['object']; Default changed: None -&gt; \{'format': \{'type': 'text'\}\} | Yes |
 | `responses.200.content.application/json.properties.tool_choice` | Union variants added: 3 | Yes |
 | `responses.200.content.application/json.properties.tools.items` | Union variants added: 4; Union variants removed: 1 | Yes |
 | `responses.200.content.application/json.properties.truncation` | Union variants added: 2 | Yes |

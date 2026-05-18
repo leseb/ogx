@@ -633,3 +633,102 @@ async def test_late_table_creation_after_engine_init():
         assert result.data[0]["value"] == "world"
 
         await store.shutdown()
+
+
+async def test_sqlstore_pagination_with_tied_timestamps():
+    """Test cursor pagination correctly handles rows with duplicate sort key values.
+
+    This test verifies the fix for the bug where cursor pagination would drop rows
+    with the same timestamp as the cursor row. The fix adds a tie-breaker using the
+    primary key column in both the ORDER BY clause and the cursor predicate.
+    """
+    with TemporaryDirectory() as tmp_dir:
+        db_path = tmp_dir + "/test.db"
+        store = SqlAlchemySqlStoreImpl(SqliteSqlStoreConfig(db_path=db_path))
+
+        # Create test table
+        await store.create_table(
+            "test_records",
+            {
+                "id": ColumnType.STRING,
+                "created_at": ColumnType.INTEGER,
+                "data": ColumnType.STRING,
+            },
+        )
+
+        # Insert test data with intentional timestamp ties
+        same_time = int(time.time())
+        test_data = [
+            {"id": "alpha", "created_at": same_time, "data": "first"},
+            {"id": "beta", "created_at": same_time, "data": "second"},
+            {"id": "gamma", "created_at": same_time, "data": "third"},
+            {"id": "delta", "created_at": same_time + 1, "data": "fourth"},
+            {"id": "epsilon", "created_at": same_time + 1, "data": "fifth"},
+        ]
+
+        for record in test_data:
+            await store.insert("test_records", record)
+
+        # Test descending order with cursor pagination through tied timestamps
+        # Collect all items by paginating through the entire dataset
+        all_items = []
+        cursor_id = None
+        page_count = 0
+
+        while True:
+            cursor_arg = ("id", cursor_id) if cursor_id else None
+            page = await store.fetch_all(
+                table="test_records",
+                order_by=[("created_at", "desc")],
+                cursor=cursor_arg,
+                limit=2,
+            )
+            all_items.extend(page.data)
+            page_count += 1
+
+            if not page.has_more:
+                break
+
+            cursor_id = page.data[-1]["id"]
+
+        # Verify we got all 5 items and no duplicates
+        all_ids = {item["id"] for item in all_items}
+        assert all_ids == {"alpha", "beta", "gamma", "delta", "epsilon"}, f"Got IDs: {all_ids}"
+        assert len(all_items) == 5, f"Expected 5 items, got {len(all_items)}"
+
+        # Verify ordering: items are sorted by created_at desc, then by id desc (tie-breaker)
+        # The two items with same_time + 1 should come first
+        timestamps = [item["created_at"] for item in all_items]
+        for i in range(len(timestamps) - 1):
+            assert timestamps[i] >= timestamps[i + 1], "Items should be in descending timestamp order"
+
+        # Test ascending order with cursor pagination through tied timestamps
+        all_items_asc = []
+        cursor_id_asc = None
+
+        while True:
+            cursor_arg_asc = ("id", cursor_id_asc) if cursor_id_asc else None
+            page_asc = await store.fetch_all(
+                table="test_records",
+                order_by=[("created_at", "asc")],
+                cursor=cursor_arg_asc,
+                limit=2,
+            )
+            all_items_asc.extend(page_asc.data)
+
+            if not page_asc.has_more:
+                break
+
+            cursor_id_asc = page_asc.data[-1]["id"]
+
+        # Verify we got all 5 items in ascending order as well
+        all_ids_asc = {item["id"] for item in all_items_asc}
+        assert all_ids_asc == {"alpha", "beta", "gamma", "delta", "epsilon"}
+        assert len(all_items_asc) == 5
+
+        # Verify ascending order
+        timestamps_asc = [item["created_at"] for item in all_items_asc]
+        for i in range(len(timestamps_asc) - 1):
+            assert timestamps_asc[i] <= timestamps_asc[i + 1], "Items should be in ascending timestamp order"
+
+        await store.shutdown()

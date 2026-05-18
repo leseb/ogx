@@ -139,7 +139,7 @@ class TestDoclingServeFileProcessor:
         assert response.chunks[2].content == "Third chunk of text."
 
     async def test_process_file_static_chunking(self, processor: DoclingServeFileProcessor, upload_file: UploadFile):
-        static_config = VectorStoreChunkingStrategyStaticConfig(max_chunk_size_tokens=256)
+        static_config = VectorStoreChunkingStrategyStaticConfig(max_chunk_size_tokens=256, chunk_overlap_tokens=20)
         request = ProcessFileRequest(chunking_strategy=VectorStoreChunkingStrategyStatic(static=static_config))
         mock_response = _make_httpx_response(CHUNK_RESPONSE)
 

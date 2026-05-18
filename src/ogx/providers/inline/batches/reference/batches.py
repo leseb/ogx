@@ -142,7 +142,6 @@ class ReferenceBatchesImpl(Batches):
         self.process_batches = True
 
     async def initialize(self) -> None:
-        # TODO: start background processing of existing tasks
         await self.sql_store.create_table(
             TABLE_BATCHES,
             {
@@ -152,6 +151,45 @@ class ReferenceBatchesImpl(Batches):
                 "batch_data": ColumnType.JSON,
             },
         )
+
+        # Reconcile batches orphaned by provider restart
+        # Query each non-terminal status separately since AuthorizedSqlStore doesn't expose where_sql
+        non_terminal_statuses = ["validating", "in_progress", "cancelling"]
+        orphaned_batches = []
+        for status in non_terminal_statuses:
+            result = await self.sql_store.fetch_all(table=TABLE_BATCHES, where={"status": status})
+            orphaned_batches.extend(result.data)
+
+        if orphaned_batches:
+            logger.info("Reconciling orphaned batches from provider restart", count=len(orphaned_batches))
+            for row in orphaned_batches:
+                batch_id = row["id"]
+                original_status = row["status"]
+                new_status = "cancelled" if original_status == "cancelling" else "failed"
+                message = f"Batch interrupted by provider restart (was {original_status})"
+
+                batch = BatchObject.model_validate(row["batch_data"])
+                batch_dict = batch.model_dump()
+                batch_dict["status"] = new_status
+                if new_status == "failed":
+                    batch_dict["failed_at"] = int(time.time())
+                    batch_dict["errors"] = Errors(
+                        data=[BatchError(code="provider_restart", message=message)]
+                    ).model_dump()
+                else:
+                    batch_dict["cancelled_at"] = int(time.time())
+
+                await self.sql_store.update(
+                    table=TABLE_BATCHES,
+                    data={"status": new_status, "batch_data": batch_dict},
+                    where={"id": batch_id},
+                )
+                logger.info(
+                    "Reconciled orphaned batch",
+                    batch_id=batch_id,
+                    original_status=original_status,
+                    new_status=new_status,
+                )
 
     async def shutdown(self) -> None:
         """Shutdown the batches provider."""

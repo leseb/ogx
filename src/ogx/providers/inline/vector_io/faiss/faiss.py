@@ -455,14 +455,14 @@ class FaissVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoco
         return index
 
     async def insert_chunks(self, request: InsertChunksRequest) -> None:
-        index = self.cache.get(request.vector_store_id)
+        index = await self._get_and_cache_vector_store_index(request.vector_store_id)
         if index is None:
             raise VectorStoreNotFoundError(request.vector_store_id)
 
         await index.insert_chunks(request)
 
     async def query_chunks(self, request: QueryChunksRequest) -> QueryChunksResponse:
-        index = self.cache.get(request.vector_store_id)
+        index = await self._get_and_cache_vector_store_index(request.vector_store_id)
         if index is None:
             raise VectorStoreNotFoundError(request.vector_store_id)
 
@@ -470,5 +470,8 @@ class FaissVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProtoco
 
     async def delete_chunks(self, request: DeleteChunksRequest) -> None:
         """Delete chunks from a faiss index"""
-        faiss_index = self.cache[request.vector_store_id].index
-        await faiss_index.delete_chunks(request.chunks)
+        index = await self._get_and_cache_vector_store_index(request.vector_store_id)
+        if index is None:
+            raise VectorStoreNotFoundError(request.vector_store_id)
+
+        await index.index.delete_chunks(request.chunks)

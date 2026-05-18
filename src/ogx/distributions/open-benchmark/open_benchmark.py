@@ -15,6 +15,7 @@ from ogx.distributions.template import (
     RunConfigSettings,
     get_model_registry,
 )
+from ogx.providers.inline.files.localfs.config import LocalfsFilesImplConfig
 from ogx.providers.inline.vector_io.sqlite_vec.config import (
     SQLiteVectorIOConfig,
 )
@@ -108,6 +109,7 @@ def get_distribution_template() -> DistributionTemplate:
             BuildProvider(provider_type="remote::chromadb"),
             BuildProvider(provider_type="remote::pgvector"),
         ],
+        "files": [BuildProvider(provider_type="inline::localfs")],
         "responses": [BuildProvider(provider_type="inline::builtin")],
         "tool_runtime": [
             BuildProvider(provider_type="remote::brave-search"),
@@ -141,6 +143,12 @@ def get_distribution_template() -> DistributionTemplate:
         ),
     ]
 
+    files_provider = Provider(
+        provider_id="builtin-files",
+        provider_type="inline::localfs",
+        config=LocalfsFilesImplConfig.sample_run_config(f"~/.ogx/distributions/{name}"),
+    )
+
     models, _ = get_model_registry(available_models)
     default_models = models + [
         ModelInput(
@@ -170,6 +178,7 @@ def get_distribution_template() -> DistributionTemplate:
                 provider_overrides={
                     "inference": inference_providers,
                     "vector_io": vector_io_providers,
+                    "files": [files_provider],
                 },
                 default_models=default_models,
             ),

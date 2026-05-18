@@ -41,7 +41,14 @@ logger = get_logger(name=__name__, category="core::routing_tables")
 class ModelsRoutingTable(CommonRoutingTableImpl, Models):
     """Routing table for managing model registrations, provider lookups, and dynamic model discovery."""
 
-    listed_providers: set[str] = set()
+    def __init__(
+        self,
+        impls_by_provider_id: dict[str, Any],
+        dist_registry: Any,
+        policy: list[Any],
+    ) -> None:
+        super().__init__(impls_by_provider_id, dist_registry, policy)
+        self.listed_providers: set[str] = set()
 
     async def _resolve_auto_model(self, provider_id: str, model_type: ModelType) -> str:
         """Resolve provider_model_id="auto" to an actual model from the provider.
@@ -97,18 +104,14 @@ class ModelsRoutingTable(CommonRoutingTableImpl, Models):
             try:
                 models = await provider.list_models()
             except Exception as e:
-                if provider_id not in self.listed_providers:
-                    self.listed_providers.add(provider_id)
-                    logger.warning("Model refresh skipped", provider_id=provider_id)
-                else:
-                    logger.warning("Model refresh failed", provider_id=provider_id, error=str(e))
+                logger.warning("Model refresh failed", provider_id=provider_id, error=str(e))
                 continue
 
-            self.listed_providers.add(provider_id)
             if models is None:
                 continue
 
             await self.update_registered_models(provider_id, models)
+            self.listed_providers.add(provider_id)
 
     async def _get_dynamic_models_from_provider_data(self) -> list[Model]:
         """
