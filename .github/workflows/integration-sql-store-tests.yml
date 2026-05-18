@@ -14,8 +14,12 @@ on:
     paths:
       - 'src/ogx/providers/utils/sqlstore/**'
       - 'src/ogx/core/storage/kvstore/postgres/**'
+      - 'src/ogx/core/storage/migrations/**'
+      - 'src/ogx/core/storage/schema.py'
+      - 'src/ogx/cli/db.py'
       - 'tests/integration/sqlstore/**'
       - 'tests/integration/providers/utils/kvstore/**'
+      - 'tests/integration/providers/utils/sqlstore/**'
       - 'uv.lock'
       - 'pyproject.toml'
       - 'requirements.txt'
