@@ -203,7 +203,7 @@ class ModelRegistryHelper(ModelsProtocolPrivate):
         model_entries: list[ProviderModelEntry] | None = None,
         allowed_models: list[str] | None = None,
     ):
-        self.allowed_models = allowed_models if allowed_models else []
+        self.allowed_models = allowed_models
 
         self.alias_to_provider_id_map = {}
         self.provider_id_to_llama_model_map = {}
@@ -224,7 +224,7 @@ class ModelRegistryHelper(ModelsProtocolPrivate):
         for entry in self.model_entries:
             ids = [entry.provider_model_id] + entry.aliases
             for id in ids:
-                if self.allowed_models and id not in self.allowed_models:
+                if self.allowed_models is not None and id not in self.allowed_models:
                     continue
                 models.append(
                     Model(

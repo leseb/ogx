@@ -758,6 +758,16 @@ class OpenAICreateVectorStoreFileBatchRequestWithExtraBody(BaseModel, extra="all
     attributes: VectorStoreFileAttributes | None = None
     chunking_strategy: VectorStoreChunkingStrategy | None = None
 
+    @model_validator(mode="after")
+    def validate_file_ids_or_files(self) -> "OpenAICreateVectorStoreFileBatchRequestWithExtraBody":
+        has_file_ids = len(self.file_ids) > 0
+        has_files = self.files is not None and len(self.files) > 0
+        if has_file_ids and has_files:
+            raise ValueError("Only one of 'file_ids' or 'files' may be provided, not both")
+        if not has_file_ids and not has_files:
+            raise ValueError("Either 'file_ids' or 'files' must be provided")
+        return self
+
 
 @json_schema_type
 class ChunkForDeletion(BaseModel):

@@ -13,7 +13,7 @@ FastAPI route decorators.
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ogx_api.router_utils import (
     ExceptionTranslatingRoute,
@@ -50,7 +50,7 @@ class _ListItemsQueryParams(BaseModel):
 
     after: str | None = None
     include: list[ConversationItemInclude] | None = None
-    limit: int | None = None
+    limit: int | None = Field(default=None, ge=1, le=100)
     order: Literal["asc", "desc"] | None = None
 
 

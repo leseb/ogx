@@ -233,6 +233,8 @@ class ListItemsRequest(BaseModel):
     )
     limit: int | None = Field(
         default=None,
+        ge=1,
+        le=100,
         description="A limit on the number of objects to be returned (1-100, default 20).",
     )
     order: Literal["asc", "desc"] | None = Field(

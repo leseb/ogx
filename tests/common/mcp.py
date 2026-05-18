@@ -180,11 +180,12 @@ def make_mcp_server(
 
     logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
 
-    tools = tools or default_tools()
+    if tools is None:
+        tools = default_tools()
 
     # Register all tools with the server
-    for tool_func in tools.values():
-        server.tool()(tool_func)
+    for tool_name, tool_func in tools.items():
+        server.tool(name=tool_name)(tool_func)
 
     sse = SseServerTransport("/messages/")
 

@@ -100,21 +100,31 @@ def _build_proxy_mounts(proxy_config: ProxyConfig) -> dict[str, httpx.AsyncHTTPT
         # Convert Path to string for httpx
         transport_kwargs["verify"] = str(proxy_config.cacert)
 
+    mounts: dict[str, httpx.AsyncHTTPTransport] = {}
+
     if proxy_config.url:
-        # Convert HttpUrl to string for httpx
         proxy_url = str(proxy_config.url)
-        return {
-            "http://": httpx.AsyncHTTPTransport(proxy=proxy_url, **transport_kwargs),
-            "https://": httpx.AsyncHTTPTransport(proxy=proxy_url, **transport_kwargs),
-        }
+        mounts["http://"] = httpx.AsyncHTTPTransport(proxy=proxy_url, **transport_kwargs)
+        mounts["https://"] = httpx.AsyncHTTPTransport(proxy=proxy_url, **transport_kwargs)
+    else:
+        if proxy_config.http:
+            mounts["http://"] = httpx.AsyncHTTPTransport(proxy=str(proxy_config.http), **transport_kwargs)
+        if proxy_config.https:
+            mounts["https://"] = httpx.AsyncHTTPTransport(proxy=str(proxy_config.https), **transport_kwargs)
 
-    mounts = {}
-    if proxy_config.http:
-        mounts["http://"] = httpx.AsyncHTTPTransport(proxy=str(proxy_config.http), **transport_kwargs)
-    if proxy_config.https:
-        mounts["https://"] = httpx.AsyncHTTPTransport(proxy=str(proxy_config.https), **transport_kwargs)
+    if not mounts:
+        return None
 
-    return mounts if mounts else None
+    # Apply no_proxy bypass: direct (non-proxied) transports for excluded hosts
+    if proxy_config.no_proxy:
+        for host in proxy_config.no_proxy:
+            if host.startswith("."):
+                pattern = f"all://*{host}"
+            else:
+                pattern = f"all://{host}"
+            mounts[pattern] = httpx.AsyncHTTPTransport()
+
+    return mounts
 
 
 def build_network_client_kwargs(network_config: NetworkConfig | None) -> dict[str, Any]:

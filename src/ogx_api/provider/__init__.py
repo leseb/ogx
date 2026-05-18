@@ -9,7 +9,7 @@ Provider SDK surface for OGX.
 
 This namespace contains the symbols an out-of-tree provider needs to register
 itself with the OGX server: protocol classes, provider specs, the `Api` enum,
-the `webmethod` decorator, schema utilities, and shared resource/value types.
+schema utilities, and shared resource/value types.
 
 The Provider SDK surface is levelled as a single cohesive contract — see
 `docs/docs/concepts/apis/api_leveling.mdx` for the stability rules. The whole

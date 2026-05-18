@@ -10673,7 +10673,9 @@ components:
           nullable: true
         limit:
           anyOf:
-          - type: integer
+          - maximum: 100
+            minimum: 1
+            type: integer
           - type: 'null'
           description: A limit on the number of objects to be returned (1-100, default 20).
           nullable: true
