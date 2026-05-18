@@ -241,17 +241,21 @@ class MilvusIndex(EmbeddingIndex):
             "output_fields": ["*"],
         }
 
-        # Only apply radius threshold if score_threshold is meaningful
-        # For cosine similarity, distance ranges from 0 (identical) to 2 (opposite)
-        if score_threshold > 0:
-            search_kwargs["search_params"] = {"params": {"radius": score_threshold}}
-
         if filter_expr:
             search_kwargs["filter"] = filter_expr
 
         search_res = await asyncio.to_thread(self.client.search, **search_kwargs)
-        chunks = [load_embedded_chunk_with_backward_compat(res["entity"]["chunk_content"]) for res in search_res[0]]
-        scores = [res["distance"] for res in search_res[0]]
+
+        chunks = []
+        scores = []
+        for res in search_res[0]:
+            score = res["distance"]
+            if score < score_threshold:
+                continue
+            chunk = load_embedded_chunk_with_backward_compat(res["entity"]["chunk_content"])
+            chunks.append(chunk)
+            scores.append(score)
+
         return QueryChunksResponse(chunks=chunks, scores=scores)
 
     async def query_keyword(
