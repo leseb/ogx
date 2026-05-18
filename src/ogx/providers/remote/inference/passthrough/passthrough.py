@@ -6,11 +6,13 @@
 
 from collections.abc import AsyncIterator
 
+import httpx
 from openai import AsyncOpenAI
 
 from ogx.core.request_headers import NeedsRequestProviderData
 from ogx.log import get_logger
 from ogx.providers.utils.forward_headers import build_forwarded_headers
+from ogx.providers.utils.inference.http_client import build_network_client_kwargs
 from ogx.providers.utils.inference.stream_utils import wrap_async_stream
 from ogx_api import (
     Inference,
@@ -57,6 +59,10 @@ class PassthroughInferenceAdapter(NeedsRequestProviderData, Inference):
         models = []
         for model_data in response.data:
             downstream_model_id = model_data.id
+
+            if self.config.allowed_models is not None and downstream_model_id not in self.config.allowed_models:
+                continue
+
             custom_metadata = getattr(model_data, "custom_metadata", {}) or {}
 
             # Prefix identifier with provider ID for local registry
@@ -82,6 +88,11 @@ class PassthroughInferenceAdapter(NeedsRequestProviderData, Inference):
         base_url = self._get_passthrough_url()
         request_headers = self._build_request_headers()
 
+        network_kwargs = build_network_client_kwargs(self.config.network)
+        extra_params: dict = {}
+        if network_kwargs:
+            extra_params["http_client"] = httpx.AsyncClient(**network_kwargs)
+
         # api_key="" means the SDK adds no Authorization header of its own;
         # auth comes entirely from request_headers (forwarded or static api_key).
         # This avoids the "passthrough" sentinel that would send a spurious
@@ -91,6 +102,7 @@ class PassthroughInferenceAdapter(NeedsRequestProviderData, Inference):
             base_url=f"{base_url.rstrip('/')}/v1",
             api_key="",
             default_headers=request_headers or None,
+            **extra_params,
         )
 
     def _build_request_headers(self) -> dict[str, str]:
