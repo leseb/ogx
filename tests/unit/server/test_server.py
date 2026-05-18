@@ -4,15 +4,23 @@
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
 
-from unittest.mock import Mock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from fastapi import HTTPException
 from openai import BadRequestError
 from pydantic import ValidationError
 
 from ogx.core.access_control.access_control import AccessDeniedError
 from ogx.core.datatypes import AuthenticationRequiredError
-from ogx.core.server.server import remove_disabled_providers, translate_exception
+from ogx.core.server.server import (
+    StackApp,
+    _check_postgres_schema_versions,
+    remove_disabled_providers,
+    translate_exception,
+)
+from ogx.core.storage.datatypes import PostgresSqlStoreConfig
 
 
 class TestTranslateException:
@@ -261,3 +269,79 @@ class TestRemoveDisabledProviders:
         assert result["registered_resources"]["models"][0]["model_id"] == "llama-3-2-3b"
         assert result["registered_resources"]["models"][1]["model_id"] == "gpt-4o-mini"
         assert result["registered_resources"]["models"][2]["model_id"] == "granite-embedding-125m"
+
+
+class _ImmediateFuture:
+    def __init__(self, value: object | None = None, exception: Exception | None = None) -> None:
+        self._value = value
+        self._exception = exception
+
+    def result(self) -> object | None:
+        if self._exception is not None:
+            raise self._exception
+        return self._value
+
+
+class _ImmediateExecutor:
+    def __enter__(self) -> "_ImmediateExecutor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def submit(self, fn, *args, **kwargs) -> _ImmediateFuture:
+        try:
+            return _ImmediateFuture(value=fn(*args, **kwargs))
+        except Exception as exc:
+            return _ImmediateFuture(exception=exc)
+
+
+class TestPostgresSchemaCheck:
+    async def test_continues_checking_other_backends_after_fresh_backend(self):
+        config = SimpleNamespace(
+            storage=SimpleNamespace(
+                backends={
+                    "fresh_backend": PostgresSqlStoreConfig(user="fresh_user"),
+                    "stale_backend": PostgresSqlStoreConfig(user="stale_user"),
+                }
+            )
+        )
+
+        fresh_conn = AsyncMock()
+        fresh_conn.fetchval.side_effect = [False, False]
+        fresh_conn.close = AsyncMock()
+
+        stale_conn = AsyncMock()
+        stale_conn.fetchval.side_effect = [True, "000"]
+        stale_conn.close = AsyncMock()
+
+        with patch("asyncpg.connect", side_effect=[fresh_conn, stale_conn]):
+            with pytest.raises(SystemExit):
+                await _check_postgres_schema_versions(config)
+
+        assert stale_conn.fetchval.await_count == 2
+
+
+class TestStackAppInitialization:
+    def test_runs_schema_check_before_stack_initialize(self):
+        call_order: list[str] = []
+
+        class FakeStack:
+            def __init__(self, config: object) -> None:
+                self.config = config
+
+            async def initialize(self) -> None:
+                call_order.append("initialize")
+
+        async def fake_check(config: object) -> None:
+            call_order.append("check")
+
+        with (
+            patch("ogx.core.server.server.Stack", FakeStack),
+            patch("ogx.core.server.server._check_postgres_schema_versions", side_effect=fake_check),
+            patch("ogx.core.server.server.concurrent.futures.ThreadPoolExecutor", _ImmediateExecutor),
+            patch("ogx.core.storage.sqlstore.sqlstore.reset_sqlstore_engines", side_effect=lambda: call_order.append("reset")),
+        ):
+            StackApp(config=Mock())
+
+        assert call_order[:3] == ["check", "initialize", "reset"]

@@ -8,12 +8,12 @@
 
 from ogx.core.storage.schema import (
     ALL_SCHEMAS,
-    CONNECTORS_SCHEMA,
     CONVERSATION_ITEMS_SCHEMA,
     CONVERSATIONS_SCHEMA,
     FILES_LOCALFS_SCHEMA,
     FILES_OPENAI_SCHEMA,
     FILES_S3_SCHEMA,
+    PROMPTS_SCHEMA,
     RESPONSES_SCHEMA,
 )
 from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
@@ -44,9 +44,9 @@ def test_every_schema_uses_valid_column_types():
 
 
 def test_prompts_schema_columns():
-    assert "id" in CONNECTORS_SCHEMA
-    assert "prompt_id" not in CONNECTORS_SCHEMA
-    assert "prompt_data" not in CONNECTORS_SCHEMA
+    assert "id" in PROMPTS_SCHEMA
+    assert "prompt_id" in PROMPTS_SCHEMA
+    assert "prompt_data" in PROMPTS_SCHEMA
 
 
 def test_conversations_schema_includes_deprecated_items():

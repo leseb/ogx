@@ -30,7 +30,6 @@ from ogx.core.datatypes import (
     AuthenticationRequiredError,
     StackConfig,
 )
-from ogx.core.storage.migrations import EXPECTED_HEAD
 from ogx.core.distribution import builtin_automatically_routed_apis
 from ogx.core.exceptions import translate_exception
 from ogx.core.external import load_external_apis
@@ -46,6 +45,7 @@ from ogx.core.server.fastapi_router_registry import (
 from ogx.core.stack import (
     Stack,
 )
+from ogx.core.storage.migrations import EXPECTED_HEAD
 from ogx.core.utils.config import redact_sensitive_fields
 from ogx.core.utils.config_dirs import migrate_legacy_config_dir
 from ogx.core.utils.config_resolution import resolve_config_or_distro
@@ -114,12 +114,17 @@ class StackApp(FastAPI):
         super().__init__(*args, **kwargs)
         self.stack: Stack = Stack(config)
 
-        # Initialize stack in a temporary event loop to set up impls for route registration.
+        # Run schema checks and stack initialization in a temporary event loop to set up
+        # impls for route registration. The schema check must run before initialize() so
+        # a fresh PostgreSQL database is not mistaken for pre-migration state after
+        # internal service initialization creates tables.
         # Storage backends use lazy engine initialization, so connections are created on
         # first use in the correct event loop, avoiding event loop mismatch issues.
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, self.stack.initialize())  # type: ignore[no-untyped-call]
-            future.result()
+            check_future = executor.submit(asyncio.run, _check_postgres_schema_versions(config))
+            check_future.result()
+            init_future = executor.submit(asyncio.run, self.stack.initialize())  # type: ignore[no-untyped-call]
+            init_future.result()
 
         # Reset SQL engines that may have been created in the temporary event loop
         # (e.g. by register_connectors → list_connectors → fetch_all) so they are
@@ -169,14 +174,13 @@ async def _check_postgres_schema_versions(config: StackConfig) -> None:
                         backend=backend_name,
                     )
                     raise SystemExit(1)
-                return
+                continue
 
             current_rev = await conn.fetchval("SELECT version_num FROM alembic_version")
 
             if current_rev is None:
                 logger.error(
-                    "alembic_version table exists but is empty. "
-                    "Run 'ogx db upgrade' to apply migrations.",
+                    "alembic_version table exists but is empty. Run 'ogx db upgrade' to apply migrations.",
                     backend=backend_name,
                 )
                 raise SystemExit(1)
@@ -212,8 +216,6 @@ async def lifespan(app: StackApp) -> AsyncIterator[None]:
 
     logger.info("Starting up OGX server", version=server_version)
     assert app.stack is not None
-
-    await _check_postgres_schema_versions(app.stack.config)
 
     app.stack.create_registry_refresh_task()  # type: ignore[no-untyped-call]
     yield
