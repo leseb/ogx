@@ -17,8 +17,10 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    and_,
     event,
     inspect,
+    or_,
     select,
     text,
 )
@@ -271,34 +273,55 @@ class SqlAlchemySqlStoreImpl(SqlStore):
                 if not order_by:
                     raise ValueError("order_by is required when using cursor pagination")
 
-                # Only support single-column ordering for cursor pagination
-                if len(order_by) != 1:
-                    raise ValueError(
-                        f"Cursor pagination only supports single-column ordering, got {len(order_by)} columns"
-                    )
-
                 cursor_key_column, cursor_id = cursor
-                order_column, order_direction = order_by[0]
 
                 # Verify cursor_key_column exists
                 if cursor_key_column not in table_obj.c:
                     raise ValueError(f"Cursor key column '{cursor_key_column}' not found in table '{table}'")
 
-                # Get cursor value for the order column
-                cursor_query = select(table_obj.c[order_column]).where(table_obj.c[cursor_key_column] == cursor_id)
+                # Fetch cursor values for all order columns
+                order_columns = [col for col, _ in order_by]
+                for col in order_columns:
+                    if col not in table_obj.c:
+                        raise ValueError(f"Column '{col}' not found in table '{table}'")
+
+                cursor_query = select(*[table_obj.c[col] for col in order_columns]).where(
+                    table_obj.c[cursor_key_column] == cursor_id
+                )
                 cursor_result = await session.execute(cursor_query)
                 cursor_row = cursor_result.fetchone()
 
                 if not cursor_row:
                     raise ValueError(f"Record with {cursor_key_column}='{cursor_id}' not found in table '{table}'")
 
-                cursor_value = cursor_row[0]
+                # Build compound cursor condition for stable pagination.
+                # For N order columns, the condition is:
+                #   (col1 < val1)
+                #   OR (col1 = val1 AND col2 < val2)
+                #   OR (col1 = val1 AND col2 = val2 AND col3 < val3)
+                #   ...
+                # where < or > depends on the sort direction of each column.
+                cursor_clauses: list[ColumnElement[bool]] = []
+                for i in range(len(order_by)):
+                    col_name, direction = order_by[i]
+                    col = table_obj.c[col_name]
+                    val = cursor_row[i]
 
-                # Apply cursor condition based on sort direction
-                if order_direction == "desc":
-                    query = query.where(table_obj.c[order_column] < cursor_value)
-                else:
-                    query = query.where(table_obj.c[order_column] > cursor_value)
+                    # All preceding columns must be equal
+                    equality_conditions = [table_obj.c[order_by[j][0]] == cursor_row[j] for j in range(i)]
+
+                    # The i-th column uses a strict inequality
+                    if direction == "desc":
+                        inequality = col < val
+                    else:
+                        inequality = col > val
+
+                    if equality_conditions:
+                        cursor_clauses.append(and_(*equality_conditions, inequality))
+                    else:
+                        cursor_clauses.append(inequality)
+
+                query = query.where(or_(*cursor_clauses))
 
             # Apply ordering
             if order_by:

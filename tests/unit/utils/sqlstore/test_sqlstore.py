@@ -297,8 +297,8 @@ async def test_sqlstore_pagination_ascending_order():
         assert result2.has_more is True
 
 
-async def test_sqlstore_pagination_multi_column_ordering_error():
-    """Test that multi-column ordering raises an error when using cursor pagination."""
+async def test_sqlstore_pagination_multi_column_ordering():
+    """Test that multi-column ordering works correctly with cursor pagination."""
     with TemporaryDirectory() as tmp_dir:
         db_path = tmp_dir + "/test.db"
         store = SqlAlchemySqlStoreImpl(SqliteSqlStoreConfig(db_path=db_path))
@@ -313,25 +313,90 @@ async def test_sqlstore_pagination_multi_column_ordering_error():
             },
         )
 
-        await store.insert("test_records", {"id": "task1", "priority": 1, "created_at": 12345})
+        await store.insert("test_records", {"id": "task1", "priority": 1, "created_at": 100})
+        await store.insert("test_records", {"id": "task2", "priority": 1, "created_at": 200})
+        await store.insert("test_records", {"id": "task3", "priority": 2, "created_at": 50})
 
-        # Test that multi-column ordering with cursor raises error
-        with pytest.raises(ValueError, match="Cursor pagination only supports single-column ordering, got 2 columns"):
-            await store.fetch_all(
-                table="test_records",
-                order_by=[("priority", "asc"), ("created_at", "desc")],
-                cursor=("id", "task1"),
-                limit=2,
-            )
-
-        # Test that multi-column ordering without cursor works fine
+        # Multi-column ordering with cursor pagination: priority asc, created_at desc
+        # Expected full order: task3 (pri=2), task2 (pri=1, created=200), task1 (pri=1, created=100)
+        # Wait — priority asc means pri=1 first: task2 (pri=1, created=200), task1 (pri=1, created=100), task3 (pri=2)
         result = await store.fetch_all(
             table="test_records",
             order_by=[("priority", "asc"), ("created_at", "desc")],
-            limit=2,
+            limit=1,
         )
         assert len(result.data) == 1
-        assert result.data[0]["id"] == "task1"
+        assert result.data[0]["id"] == "task2"
+        assert result.has_more is True
+
+        # Second page: after task2, next should be task1 (same priority, lower created_at)
+        result2 = await store.fetch_all(
+            table="test_records",
+            order_by=[("priority", "asc"), ("created_at", "desc")],
+            cursor=("id", "task2"),
+            limit=1,
+        )
+        assert len(result2.data) == 1
+        assert result2.data[0]["id"] == "task1"
+        assert result2.has_more is True
+
+        # Third page: after task1, next should be task3 (higher priority)
+        result3 = await store.fetch_all(
+            table="test_records",
+            order_by=[("priority", "asc"), ("created_at", "desc")],
+            cursor=("id", "task1"),
+            limit=1,
+        )
+        assert len(result3.data) == 1
+        assert result3.data[0]["id"] == "task3"
+        assert result3.has_more is False
+
+        # Multi-column ordering without cursor also works fine
+        result_all = await store.fetch_all(
+            table="test_records",
+            order_by=[("priority", "asc"), ("created_at", "desc")],
+            limit=10,
+        )
+        assert len(result_all.data) == 3
+        assert [r["id"] for r in result_all.data] == ["task2", "task1", "task3"]
+
+
+async def test_sqlstore_pagination_duplicate_timestamps():
+    """Test that compound ordering prevents skipped or duplicated rows when timestamps collide."""
+    with TemporaryDirectory() as tmp_dir:
+        db_path = tmp_dir + "/test.db"
+        store = SqlAlchemySqlStoreImpl(SqliteSqlStoreConfig(db_path=db_path))
+
+        await store.create_table(
+            "test_records",
+            {
+                "id": ColumnType.STRING,
+                "created_at": ColumnType.INTEGER,
+            },
+        )
+
+        # All records share the same timestamp
+        same_ts = 1000000
+        for record_id in ["rec-d", "rec-b", "rec-a", "rec-c"]:
+            await store.insert("test_records", {"id": record_id, "created_at": same_ts})
+
+        # Page through all records with limit=2 using compound ordering
+        all_ids: list[str] = []
+        cursor_id = None
+        for _ in range(10):
+            result = await store.fetch_all(
+                table="test_records",
+                order_by=[("created_at", "desc"), ("id", "desc")],
+                cursor=("id", cursor_id) if cursor_id else None,
+                limit=2,
+            )
+            all_ids.extend(r["id"] for r in result.data)
+            if not result.has_more:
+                break
+            cursor_id = result.data[-1]["id"]
+
+        assert sorted(all_ids) == ["rec-a", "rec-b", "rec-c", "rec-d"]
+        assert len(all_ids) == 4, f"Expected 4 unique records, got {len(all_ids)}: {all_ids}"
 
 
 async def test_sqlstore_pagination_cursor_requires_order_by():

@@ -281,7 +281,7 @@ class InferenceStore:
         paginated_result = await self.sql_store.fetch_all(
             table=self.reference.table_name,
             where=where_conditions if where_conditions else None,
-            order_by=[("created", order.value)],
+            order_by=[("created", order.value), ("id", order.value)],
             cursor=("id", after) if after else None,
             limit=limit,
         )

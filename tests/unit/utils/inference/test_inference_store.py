@@ -221,6 +221,42 @@ async def test_inference_store_pagination_ascending():
     assert result2.has_more is True
 
 
+async def test_inference_store_pagination_duplicate_timestamps():
+    """Test that pagination is stable when multiple completions share the same timestamp.
+
+    Without compound ordering (created + id), rows with identical timestamps can be
+    skipped or reordered across pages. The secondary sort on id ensures every row has
+    a deterministic position.
+    """
+    reference = InferenceStoreReference(backend="sql_default", table_name="chat_completions")
+    store = InferenceStore(reference, policy=[])
+    await store.initialize()
+
+    # All completions share the same timestamp
+    same_time = int(time.time())
+    test_ids = ["comp-alpha", "comp-beta", "comp-gamma", "comp-delta"]
+    for completion_id in test_ids:
+        completion = create_test_chat_completion(completion_id, same_time)
+        input_messages = [OpenAIUserMessageParam(role="user", content=f"Test {completion_id}")]
+        await store.store_chat_completion(completion, input_messages)
+
+    await store.flush()
+
+    # Collect all IDs across pages with limit=2
+    all_ids: list[str] = []
+    after = None
+    for _ in range(10):  # safety bound
+        result = await store.list_chat_completions(after=after, limit=2, order=Order.desc)
+        all_ids.extend(item.id for item in result.data)
+        if not result.has_more:
+            break
+        after = result.last_id
+
+    # Every completion must appear exactly once
+    assert sorted(all_ids) == sorted(test_ids), f"Expected {sorted(test_ids)}, got {sorted(all_ids)}"
+    assert len(all_ids) == len(set(all_ids)), f"Duplicate IDs in paginated results: {all_ids}"
+
+
 async def test_inference_store_pagination_with_model_filter():
     """Test pagination combined with model filtering."""
     reference = InferenceStoreReference(backend="sql_default", table_name="chat_completions")
