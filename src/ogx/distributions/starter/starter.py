@@ -16,6 +16,7 @@ from ogx.core.datatypes import (
     RerankerModel,
     VectorStoresConfig,
 )
+from ogx.core.storage.datatypes import KVStoreReference
 from ogx.core.storage.kvstore.config import PostgresKVStoreConfig
 from ogx.core.storage.sqlstore.sqlstore import PostgresSqlStoreConfig
 from ogx.core.utils.dynamic import instantiate_class_type
@@ -29,7 +30,6 @@ from ogx.providers.inline.inference.transformers.config import (
     TransformersInferenceConfig,
 )
 from ogx.providers.inline.vector_io.faiss.config import FaissVectorIOConfig
-from ogx.providers.inline.vector_io.milvus.config import MilvusVectorIOConfig
 from ogx.providers.inline.vector_io.sqlite_vec.config import (
     SQLiteVectorIOConfig,
 )
@@ -137,7 +137,7 @@ def get_distribution_template(name: str = "starter") -> DistributionTemplate:
         "vector_io": [
             BuildProvider(provider_type="inline::faiss"),
             BuildProvider(provider_type="inline::sqlite-vec"),
-            BuildProvider(provider_type="inline::milvus"),
+            BuildProvider(provider_type="remote::milvus"),
             BuildProvider(provider_type="remote::chromadb"),
             BuildProvider(provider_type="remote::pgvector"),
             BuildProvider(provider_type="remote::qdrant"),
@@ -193,8 +193,15 @@ def get_distribution_template(name: str = "starter") -> DistributionTemplate:
             ),
             Provider(
                 provider_id="${env.MILVUS_URL:+milvus}",
-                provider_type="inline::milvus",
-                config=MilvusVectorIOConfig.sample_run_config(f"~/.ogx/distributions/{name}"),
+                provider_type="remote::milvus",
+                config={
+                    "uri": "${env.MILVUS_URL:=}",
+                    "token": "${env.MILVUS_TOKEN:=}",
+                    "persistence": KVStoreReference(
+                        backend="kv_default",
+                        namespace="vector_io::milvus_remote",
+                    ).model_dump(exclude_none=True),
+                },
             ),
             Provider(
                 provider_id="${env.CHROMADB_URL:+chromadb}",
