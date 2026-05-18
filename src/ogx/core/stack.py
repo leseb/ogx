@@ -734,6 +734,11 @@ class Stack:
                 logger.info("API recording enabled", mode=os.environ.get("OGX_TEST_INFERENCE_MODE"))
 
         _initialize_storage(self.run_config)
+
+        from ogx.core.storage.sqlstore.sqlstore import set_sqlstore_init_phase
+
+        set_sqlstore_init_phase(True)
+
         stores = self.run_config.storage.stores
         if not stores.metadata:
             raise ValueError("storage.stores.metadata must be configured with a kv_* backend")
@@ -763,6 +768,9 @@ class Stack:
         await register_connectors(self.run_config, impls)
         await refresh_registry_once(impls)
         await validate_vector_stores_config(self.run_config.vector_stores, impls)
+
+        set_sqlstore_init_phase(False)
+
         self.impls = impls
 
     def create_registry_refresh_task(self):

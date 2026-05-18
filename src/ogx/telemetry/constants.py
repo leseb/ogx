@@ -54,6 +54,10 @@ INFERENCE_DURATION = f"{INFERENCE_PREFIX}.duration_seconds"
 INFERENCE_TIME_TO_FIRST_TOKEN = f"{INFERENCE_PREFIX}.time_to_first_token_seconds"
 INFERENCE_TOKENS_PER_SECOND = f"{INFERENCE_PREFIX}.tokens_per_second"
 
+# Inference Store Metrics
+INFERENCE_STORE_WRITES_TOTAL = f"{INFERENCE_PREFIX}.store_writes_total"
+INFERENCE_STORE_WRITE_ERRORS_TOTAL = f"{INFERENCE_PREFIX}.store_write_errors_total"
+
 # Responses API Metrics
 RESPONSES_PREFIX = f"{ogx_prefix}.responses"
 RESPONSES_PARAMETER_USAGE_TOTAL = f"{RESPONSES_PREFIX}.parameter_usage_total"
