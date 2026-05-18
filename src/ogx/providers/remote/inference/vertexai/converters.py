@@ -36,6 +36,7 @@ from ogx_api import (
     OpenAIChunkChoice,
     OpenAICompletion,
     OpenAICompletionChoice,
+    OpenAICompletionLogprobs,
     OpenAIFinishReason,
     OpenAITokenLogProb,
     OpenAITopLogProb,
@@ -540,6 +541,20 @@ def _extract_logprobs(candidate: Any) -> OpenAIChoiceLogprobs | None:
     return OpenAIChoiceLogprobs(content=token_logprobs)
 
 
+def _chat_logprobs_to_completion_logprobs(
+    chat_logprobs: OpenAIChoiceLogprobs | None,
+) -> OpenAICompletionLogprobs | None:
+    """Convert chat-style logprobs to completion-style logprobs for /v1/completions."""
+    if chat_logprobs is None or not chat_logprobs.content:
+        return None
+    tokens = [t.token for t in chat_logprobs.content]
+    token_logprobs = [t.logprob for t in chat_logprobs.content]
+    top_logprobs = [
+        {tp.token: tp.logprob for tp in t.top_logprobs} if t.top_logprobs else {} for t in chat_logprobs.content
+    ]
+    return OpenAICompletionLogprobs(tokens=tokens, token_logprobs=token_logprobs, top_logprobs=top_logprobs)
+
+
 def _process_candidates(response_or_chunk: Any) -> list[_CandidateData]:
     """Extract and process all candidates from a Gemini response or streaming chunk."""
     result: list[_CandidateData] = []
@@ -742,7 +757,7 @@ def convert_gemini_stream_chunk_to_openai_completion(
                 text=text,
                 finish_reason=finish_reason,
                 index=i + index_offset,
-                logprobs=_extract_logprobs(candidate),
+                logprobs=_chat_logprobs_to_completion_logprobs(_extract_logprobs(candidate)),
             )
         )
 
@@ -782,7 +797,7 @@ def convert_gemini_response_to_openai_completion(
                     text=text,
                     finish_reason=finish_reason,
                     index=i,
-                    logprobs=_extract_logprobs(candidate),
+                    logprobs=_chat_logprobs_to_completion_logprobs(_extract_logprobs(candidate)),
                 )
             )
     else:

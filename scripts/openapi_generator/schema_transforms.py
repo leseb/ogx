@@ -724,7 +724,9 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
                     if isinstance(schema, dict) and "$ref" in schema:
                         ref_path = schema["$ref"]
                         if ref_path.startswith("#/components/schemas/"):
-                            ref_def = openapi_schema.get("components", {}).get("schemas", {}).get(ref_path.split("/")[-1])
+                            ref_def = (
+                                openapi_schema.get("components", {}).get("schemas", {}).get(ref_path.split("/")[-1])
+                            )
                             if isinstance(ref_def, dict):
                                 resolved_schema = ref_def
 
