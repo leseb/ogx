@@ -13,6 +13,7 @@ from pydantic import BaseModel, TypeAdapter
 from ogx.core.access_control.datatypes import AccessRule
 from ogx.core.conversations.validation import CONVERSATION_ID_PATTERN
 from ogx.core.datatypes import StackConfig
+from ogx.core.storage.schema import CONVERSATION_ITEMS_SCHEMA, CONVERSATIONS_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.log import get_logger
 from ogx_api import (
@@ -37,7 +38,7 @@ from ogx_api.conversations import (
     RetrieveItemRequest,
     UpdateConversationRequest,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
+from ogx_api.internal.sqlstore import ColumnType
 
 logger = get_logger(name=__name__, category="openai_conversations")
 
@@ -78,26 +79,8 @@ class ConversationServiceImpl(Conversations):
     async def initialize(self) -> None:
         """Initialize the store and create tables."""
         self.sql_store = await authorized_sqlstore(self._conversations_ref, self.policy)
-        await self.sql_store.create_table(
-            "openai_conversations",
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "created_at": ColumnType.INTEGER,
-                "items": ColumnType.JSON,  # Deprecated: kept for backward compatibility, use conversation_items table instead
-                "metadata": ColumnType.JSON,
-            },
-        )
-
-        await self.sql_store.create_table(
-            "conversation_items",
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "conversation_id": ColumnType.STRING,
-                "created_at": ColumnType.INTEGER,
-                "sort_order": ColumnType.INTEGER,
-                "item_data": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table("openai_conversations", CONVERSATIONS_SCHEMA)
+        await self.sql_store.create_table("conversation_items", CONVERSATION_ITEMS_SCHEMA)
         # Migration for existing databases that lack the sort_order column
         await self.sql_store.sql_store.add_column_if_not_exists("conversation_items", "sort_order", ColumnType.INTEGER)
 

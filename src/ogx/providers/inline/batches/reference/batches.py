@@ -16,6 +16,7 @@ from typing import Any
 from openai.types.batch import BatchError, Errors
 from pydantic import BaseModel
 
+from ogx.core.storage.schema import BATCHES_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import AuthorizedSqlStore
 from ogx.log import get_logger
 from ogx_api import (
@@ -50,7 +51,6 @@ from ogx_api.files.models import (
     RetrieveFileRequest,
     UploadFileRequest,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 from .config import ReferenceBatchesImplConfig
 
@@ -143,15 +143,7 @@ class ReferenceBatchesImpl(Batches):
 
     async def initialize(self) -> None:
         # TODO: start background processing of existing tasks
-        await self.sql_store.create_table(
-            TABLE_BATCHES,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "created_at": ColumnType.INTEGER,
-                "status": ColumnType.STRING,
-                "batch_data": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table(TABLE_BATCHES, BATCHES_SCHEMA)
 
     async def shutdown(self) -> None:
         """Shutdown the batches provider."""

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ogx.core.access_control.datatypes import AccessRule
 from ogx.core.datatypes import StackConfig
+from ogx.core.storage.schema import CONNECTORS_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.log import get_logger
 from ogx.providers.utils.tools.mcp import get_mcp_server_info, list_mcp_tools
@@ -29,7 +30,6 @@ from ogx_api import (
     ServiceNotEnabledError,
     ToolDef,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 logger = get_logger(name=__name__, category="connectors")
 
@@ -65,18 +65,7 @@ class ConnectorServiceImpl(Connectors):
     async def initialize(self) -> None:
         """Initialize the connector service."""
         self.sql_store = await authorized_sqlstore(self._connectors_ref, self.policy)
-        await self.sql_store.create_table(
-            TABLE_CONNECTORS,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "connector_type": ColumnType.STRING,
-                "url": ColumnType.STRING,
-                "server_label": ColumnType.STRING,
-                "server_name": ColumnType.STRING,
-                "server_description": ColumnType.STRING,
-                "connector_data": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table(TABLE_CONNECTORS, CONNECTORS_SCHEMA)
 
     async def register_connector(
         self,

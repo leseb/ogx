@@ -32,6 +32,7 @@ from fastapi import Response, UploadFile
 from ogx.core.access_control.datatypes import Action
 from ogx.core.datatypes import AccessRule
 from ogx.core.id_generation import generate_object_id
+from ogx.core.storage.schema import FILES_LOCALFS_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import AuthorizedSqlStore, authorized_sqlstore
 from ogx.log import get_logger
 from ogx.providers.utils.files.sanitize import sanitize_content_disposition_filename
@@ -50,7 +51,6 @@ from ogx_api import (
     RetrieveFileRequest,
     UploadFileRequest,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 from .config import LocalfsFilesImplConfig
 
@@ -73,18 +73,7 @@ class LocalfsFilesImpl(Files):
 
         # Initialize SQL store for metadata
         self.sql_store = await authorized_sqlstore(self.config.metadata_store, self.policy)
-        await self.sql_store.create_table(
-            "openai_files",
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "filename": ColumnType.STRING,
-                "purpose": ColumnType.STRING,
-                "bytes": ColumnType.INTEGER,
-                "created_at": ColumnType.INTEGER,
-                "expires_at": ColumnType.INTEGER,
-                "file_path": ColumnType.STRING,  # Path to actual file on disk
-            },
-        )
+        await self.sql_store.create_table("openai_files", FILES_LOCALFS_SCHEMA)
 
     async def shutdown(self) -> None:
         pass

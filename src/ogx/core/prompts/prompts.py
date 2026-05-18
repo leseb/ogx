@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ogx.core.access_control.datatypes import AccessRule
 from ogx.core.datatypes import StackConfig
+from ogx.core.storage.schema import PROMPTS_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx_api import (
     Api,
@@ -25,7 +26,6 @@ from ogx_api import (
     SetDefaultVersionRequest,
     UpdatePromptRequest,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 
 class PromptServiceConfig(BaseModel):
@@ -65,17 +65,7 @@ class PromptServiceImpl(Prompts):
 
     async def initialize(self) -> None:
         self.sql_store = await authorized_sqlstore(self._prompts_ref, self.policy)
-        await self.sql_store.create_table(
-            TABLE_PROMPTS,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "prompt_id": ColumnType.STRING,
-                "version": ColumnType.INTEGER,
-                "is_default": ColumnType.BOOLEAN,
-                "created_at": ColumnType.INTEGER,
-                "prompt_data": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table(TABLE_PROMPTS, PROMPTS_SCHEMA)
 
     async def list_prompts(self) -> ListPromptsResponse:
         """List all prompts (default versions only)."""

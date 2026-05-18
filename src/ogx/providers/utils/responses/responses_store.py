@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from ogx.core.access_control.datatypes import Action
 from ogx.core.datatypes import AccessRule
 from ogx.core.storage.datatypes import ResponsesStoreReference, SqlStoreReference
+from ogx.core.storage.schema import CONVERSATION_MESSAGES_SCHEMA, RESPONSES_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.log import get_logger
 from ogx_api import (
@@ -32,7 +33,7 @@ from ogx_api import (
     ResponseItemInclude,
     ResponseNotFoundError,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
+from ogx_api.internal.sqlstore import ColumnType
 
 logger = get_logger(name=__name__, category="openai_responses")
 
@@ -132,17 +133,7 @@ class ResponsesStore:
         """Create the necessary tables if they don't exist."""
         self.sql_store = await authorized_sqlstore(self.reference, self.policy)
 
-        await self.sql_store.create_table(
-            self.reference.table_name,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "created_at": ColumnType.INTEGER,
-                "response_object": ColumnType.JSON,
-                "model": ColumnType.STRING,
-                "previous_response_id": ColumnType.STRING,
-                "input_storage_mode": ColumnType.STRING,
-            },
-        )
+        await self.sql_store.create_table(self.reference.table_name, RESPONSES_SCHEMA)
         # Backward-compatible schema migration for existing stores.
         await self.sql_store.add_column_if_not_exists(
             self.reference.table_name,
@@ -155,13 +146,7 @@ class ResponsesStore:
             ColumnType.STRING,
         )
 
-        await self.sql_store.create_table(
-            "conversation_messages",
-            {
-                "conversation_id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "messages": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table("conversation_messages", CONVERSATION_MESSAGES_SCHEMA)
 
     async def shutdown(self) -> None:
         return

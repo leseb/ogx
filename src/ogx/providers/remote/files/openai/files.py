@@ -11,6 +11,7 @@ from fastapi import Response, UploadFile
 
 from ogx.core.access_control.datatypes import Action
 from ogx.core.datatypes import AccessRule
+from ogx.core.storage.schema import FILES_OPENAI_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import AuthorizedSqlStore, authorized_sqlstore
 from ogx.providers.utils.files.sanitize import sanitize_content_disposition_filename
 from ogx_api import (
@@ -29,7 +30,6 @@ from ogx_api import (
     UploadFileRequest,
 )
 from ogx_api.files.models import OpenAIFileUploadPurpose
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 from openai import AsyncOpenAI
 
 from .config import OpenAIFilesImplConfig
@@ -112,17 +112,7 @@ class OpenAIFilesImpl(Files):
         self._client = AsyncOpenAI(api_key=self._config.api_key)
 
         self._sql_store = await authorized_sqlstore(self._config.metadata_store, self.policy)
-        await self._sql_store.create_table(
-            "openai_files",
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "filename": ColumnType.STRING,
-                "purpose": ColumnType.STRING,
-                "bytes": ColumnType.INTEGER,
-                "created_at": ColumnType.INTEGER,
-                "expires_at": ColumnType.INTEGER,
-            },
-        )
+        await self._sql_store.create_table("openai_files", FILES_OPENAI_SCHEMA)
 
     async def shutdown(self) -> None:
         pass

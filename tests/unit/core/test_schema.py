@@ -8,21 +8,13 @@
 
 from ogx.core.storage.schema import (
     ALL_SCHEMAS,
-    BATCHES_SCHEMA,
     CONNECTORS_SCHEMA,
     CONVERSATION_ITEMS_SCHEMA,
-    CONVERSATION_MESSAGES_SCHEMA,
     CONVERSATIONS_SCHEMA,
     FILES_LOCALFS_SCHEMA,
     FILES_OPENAI_SCHEMA,
     FILES_S3_SCHEMA,
-    INFERENCE_STORE_SCHEMA,
-    INTERACTIONS_SCHEMA,
     RESPONSES_SCHEMA,
-    VECTOR_STORE_FILE_BATCHES_SCHEMA,
-    VECTOR_STORE_FILE_CONTENTS_SCHEMA,
-    VECTOR_STORE_FILES_SCHEMA,
-    VECTOR_STORES_SCHEMA,
 )
 from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
@@ -34,7 +26,7 @@ def test_all_schemas_has_16_entries():
 def test_every_schema_has_a_primary_key():
     for name, schema in ALL_SCHEMAS.items():
         pk_found = False
-        for col_name, col_def in schema.items():
+        for _col_name, col_def in schema.items():
             if isinstance(col_def, ColumnDefinition) and col_def.primary_key:
                 pk_found = True
                 break

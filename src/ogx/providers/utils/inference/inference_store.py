@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ogx.core.datatypes import AccessRule
 from ogx.core.storage.datatypes import InferenceStoreReference, StorageBackendType
+from ogx.core.storage.schema import INFERENCE_STORE_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.core.storage.sqlstore.sqlstore import _SQLSTORE_BACKENDS
 from ogx.core.task import (
@@ -30,7 +31,6 @@ from ogx_api import (
     OpenAIMessageParam,
     Order,
 )
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 logger = get_logger(name=__name__, category="inference")
 
@@ -123,16 +123,7 @@ class InferenceStore:
             self.enable_write_queue = False
             logger.debug("Write queue disabled for SQLite (WAL mode handles concurrency)")
 
-        await self.sql_store.create_table(
-            self.reference.table_name,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "created": ColumnType.INTEGER,
-                "model": ColumnType.STRING,
-                "choices": ColumnType.JSON,
-                "input_messages": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table(self.reference.table_name, INFERENCE_STORE_SCHEMA)
 
     async def shutdown(self) -> None:
         if not self._worker_tasks:

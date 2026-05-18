@@ -10,9 +10,9 @@ from typing import Any
 
 from ogx.core.datatypes import AccessRule
 from ogx.core.storage.datatypes import SqlStoreReference
+from ogx.core.storage.schema import INTERACTIONS_SCHEMA
 from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.log import get_logger
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 logger = get_logger(name=__name__, category="interactions")
 
@@ -31,15 +31,7 @@ class InteractionsStore:
     async def initialize(self) -> None:
         """Create the interactions table if it does not exist."""
         self.sql_store = await authorized_sqlstore(self.reference, self.policy)
-        await self.sql_store.create_table(
-            self.reference.table_name,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "created_at": ColumnType.INTEGER,
-                "model": ColumnType.STRING,
-                "interaction_data": ColumnType.JSON,
-            },
-        )
+        await self.sql_store.create_table(self.reference.table_name, INTERACTIONS_SCHEMA)
 
     async def shutdown(self) -> None:
         return

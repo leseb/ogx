@@ -19,6 +19,12 @@ from fastapi import Body, HTTPException
 
 from ogx.core.datatypes import VectorStoresConfig
 from ogx.core.id_generation import generate_object_id
+from ogx.core.storage.schema import (
+    VECTOR_STORE_FILE_BATCHES_SCHEMA,
+    VECTOR_STORE_FILE_CONTENTS_SCHEMA,
+    VECTOR_STORE_FILES_SCHEMA,
+    VECTOR_STORES_SCHEMA,
+)
 from ogx.log import get_logger
 from ogx.providers.utils.inference.prompt_adapter import (
     interleaved_content_as_str,
@@ -86,7 +92,6 @@ from ogx_api.files.models import (
     RetrieveFileRequest,
 )
 from ogx_api.internal.kvstore import KVStore
-from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 EMBEDDING_DIMENSION = 768
 
@@ -170,41 +175,10 @@ class OpenAIVectorStoreMixin(ABC):
     async def _create_metadata_tables(self) -> None:
         """Create SQL tables for vector store metadata."""
         assert self.metadata_store is not None
-        await self.metadata_store.create_table(
-            TABLE_VECTOR_STORES,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "store_data": ColumnType.JSON,
-            },
-        )
-        await self.metadata_store.create_table(
-            TABLE_VECTOR_STORE_FILES,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "store_id": ColumnType.STRING,
-                "file_id": ColumnType.STRING,
-                "file_data": ColumnType.JSON,
-            },
-        )
-        await self.metadata_store.create_table(
-            TABLE_VECTOR_STORE_FILE_CONTENTS,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "store_id": ColumnType.STRING,
-                "file_id": ColumnType.STRING,
-                "chunk_index": ColumnType.INTEGER,
-                "chunk_data": ColumnType.JSON,
-            },
-        )
-        await self.metadata_store.create_table(
-            TABLE_VECTOR_STORE_FILE_BATCHES,
-            {
-                "id": ColumnDefinition(type=ColumnType.STRING, primary_key=True),
-                "store_id": ColumnType.STRING,
-                "batch_data": ColumnType.JSON,
-                "expires_at": ColumnType.INTEGER,
-            },
-        )
+        await self.metadata_store.create_table(TABLE_VECTOR_STORES, VECTOR_STORES_SCHEMA)
+        await self.metadata_store.create_table(TABLE_VECTOR_STORE_FILES, VECTOR_STORE_FILES_SCHEMA)
+        await self.metadata_store.create_table(TABLE_VECTOR_STORE_FILE_CONTENTS, VECTOR_STORE_FILE_CONTENTS_SCHEMA)
+        await self.metadata_store.create_table(TABLE_VECTOR_STORE_FILE_BATCHES, VECTOR_STORE_FILE_BATCHES_SCHEMA)
 
     async def _fetch_all_metadata_rows_unfiltered(self, table: str, **kwargs: Any) -> list[dict[str, Any]]:
         """Fetch rows from metadata tables without request-scoped ACL filtering.
