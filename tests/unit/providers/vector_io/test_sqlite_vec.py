@@ -217,6 +217,67 @@ async def test_chunk_id_conflict(sqlite_vec_index, sample_chunks, embedding_dime
     assert len(chunk_ids) == len(set(chunk_ids)), "Duplicate chunk IDs detected across batches!"
 
 
+async def test_upsert_removes_stale_vec_rows(sqlite_vec_index, embedding_dimension):
+    """Test that re-inserting chunks with the same IDs replaces vec rows instead of appending duplicates.
+
+    The vec0 virtual table does not support ON CONFLICT, so add_chunks must
+    delete existing vec rows before inserting updated embeddings. Without this,
+    old embeddings remain addressable and future joins return the latest chunk
+    JSON paired with stale vector distances — persistent index corruption.
+    """
+    chunk = Chunk(
+        content="test content",
+        chunk_id="upsert-test-chunk",
+        metadata={"document_id": "doc-upsert"},
+        chunk_metadata=ChunkMetadata(
+            document_id="doc-upsert",
+            chunk_id="upsert-test-chunk",
+        ),
+    )
+
+    original_embedding = np.random.rand(embedding_dimension).astype(np.float32)
+    updated_embedding = np.random.rand(embedding_dimension).astype(np.float32)
+
+    original = [
+        EmbeddedChunk(
+            content=chunk.content,
+            chunk_id=chunk.chunk_id,
+            metadata=chunk.metadata,
+            chunk_metadata=chunk.chunk_metadata,
+            embedding=original_embedding.tolist(),
+            embedding_model="test-embedding-model",
+            embedding_dimension=embedding_dimension,
+        )
+    ]
+    updated = [
+        EmbeddedChunk(
+            content=chunk.content,
+            chunk_id=chunk.chunk_id,
+            metadata=chunk.metadata,
+            chunk_metadata=chunk.chunk_metadata,
+            embedding=updated_embedding.tolist(),
+            embedding_model="test-embedding-model",
+            embedding_dimension=embedding_dimension,
+        )
+    ]
+
+    await sqlite_vec_index.add_chunks(original)
+    await sqlite_vec_index.add_chunks(updated)
+
+    connection = _create_sqlite_connection(sqlite_vec_index.db_path)
+    cur = connection.cursor()
+
+    cur.execute(f"SELECT id FROM [{sqlite_vec_index.vector_table}] WHERE id = ?", ("upsert-test-chunk",))
+    vec_rows = cur.fetchall()
+    cur.close()
+    connection.close()
+
+    assert len(vec_rows) == 1, (
+        f"Expected exactly 1 vec row after upsert, got {len(vec_rows)}. "
+        "Stale embeddings were not removed before re-insertion."
+    )
+
+
 @pytest.fixture(scope="session")
 async def sqlite_vec_adapter(sqlite_connection):
     config = type("Config", (object,), {"db_path": ":memory:"})  # Mock config with in-memory database

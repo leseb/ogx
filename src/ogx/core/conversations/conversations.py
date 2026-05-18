@@ -17,6 +17,7 @@ from ogx.core.storage.sqlstore.authorized_sqlstore import authorized_sqlstore
 from ogx.log import get_logger
 from ogx_api import (
     Api,
+    ConflictError,
     ConversationItemNotFoundError,
     ConversationNotFoundError,
     InvalidParameterError,
@@ -232,6 +233,7 @@ class ConversationServiceImpl(Conversations):
         base_time = int(time.time())
         base_sort_order = await self._next_sort_order(conversation_id)
 
+        item_records = []
         for i, item in enumerate(request.items):
             item_dict = item.model_dump()
             item_id = self._get_or_generate_item_id(item, item_dict)
@@ -244,13 +246,41 @@ class ConversationServiceImpl(Conversations):
                 "item_data": item_dict,
             }
 
-            await self.sql_store.upsert(
-                table="conversation_items",
-                data=item_record,
-                conflict_columns=["id"],
+            item_records.append(item_record)
+            created_items.append(item_dict)
+
+        # Reject duplicate IDs within the request batch
+        batch_ids: list[str] = [str(r["id"]) for r in item_records]
+        seen: set[str] = set()
+        duplicates_in_batch: list[str] = []
+        for item_id in batch_ids:
+            if item_id in seen:
+                duplicates_in_batch.append(item_id)
+            seen.add(item_id)
+        if duplicates_in_batch:
+            raise ConflictError(
+                f"Failed to add items: duplicate item IDs within request batch: {', '.join(duplicates_in_batch)}"
             )
 
-            created_items.append(item_dict)
+        # Reject IDs that already exist in the database
+        caller_provided_ids = [item.id for item in request.items if item.id is not None]
+        if caller_provided_ids:
+            existing_ids: list[str] = []
+            for item_id in caller_provided_ids:
+                record = await self.sql_store.fetch_one(
+                    table="conversation_items",
+                    where={"id": item_id},
+                )
+                if record is not None:
+                    existing_ids.append(item_id)
+            if existing_ids:
+                raise ConflictError(f"Failed to add items: item IDs already exist: {', '.join(existing_ids)}")
+
+        for item_record in item_records:
+            await self.sql_store.insert(
+                table="conversation_items",
+                data=item_record,
+            )
 
         logger.debug(
             "Created items in conversation", created_items_count=len(created_items), conversation_id=conversation_id

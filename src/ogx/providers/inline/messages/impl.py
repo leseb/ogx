@@ -138,6 +138,47 @@ class BuiltinMessagesImpl(Messages):
 
     async def initialize(self) -> None:
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
+        await self._recover_incomplete_batches()
+
+    async def _recover_incomplete_batches(self) -> None:
+        """Transition batches left in non-terminal states after a server restart.
+
+        After a restart, in-memory state (_BatchContext, _partial_results, and the
+        asyncio processing task) is gone.  Batches still marked ``in_progress`` or
+        ``canceling`` in the kvstore can never complete because there is nothing
+        driving them.  Move them to ``ended`` with all outstanding requests counted
+        as errored so that clients polling the batch get a definitive terminal
+        status instead of waiting forever.
+        """
+        batch_values = await self.kvstore.values_in_range(f"{_BATCH_PREFIX}", f"{_BATCH_PREFIX}\xff")
+        now = datetime.now(UTC)
+        recovered = 0
+        for raw in batch_values:
+            batch = MessageBatch.model_validate_json(raw)
+            if batch.processing_status in ("in_progress", "canceling"):
+                previous_status = batch.processing_status
+                still_processing = batch.request_counts.processing
+
+                batch.processing_status = "ended"
+                batch.ended_at = now.isoformat()
+                batch.request_counts = MessageBatchRequestCounts(
+                    processing=0,
+                    succeeded=batch.request_counts.succeeded,
+                    errored=batch.request_counts.errored + still_processing,
+                    canceled=batch.request_counts.canceled,
+                    expired=batch.request_counts.expired,
+                )
+                await self.kvstore.set(f"{_BATCH_PREFIX}{batch.id}", batch.model_dump_json())
+                recovered += 1
+                logger.warning(
+                    "Recovered incomplete batch after restart",
+                    batch_id=batch.id,
+                    previous_status=previous_status,
+                    errored_requests=still_processing,
+                )
+
+        if recovered:
+            logger.info("Batch recovery complete", recovered_batches=recovered)
 
     async def shutdown(self) -> None:
         await self._client.aclose()

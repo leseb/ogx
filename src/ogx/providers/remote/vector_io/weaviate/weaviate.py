@@ -58,7 +58,7 @@ class WeaviateIndex(EmbeddingIndex):
 
     def __init__(self, client: weaviate.WeaviateClient, collection_name: str, kvstore: KVStore | None = None):
         self.client = client
-        self.collection_name = sanitize_collection_name(collection_name, weaviate_format=True)
+        self.collection_name = sanitize_collection_name(collection_name, weaviate_format=True, unique=False)
         self.kvstore = kvstore
 
     async def initialize(self):
@@ -87,7 +87,7 @@ class WeaviateIndex(EmbeddingIndex):
         collection.data.insert_many(data_objects)
 
     async def delete_chunks(self, chunks_for_deletion: list[ChunkForDeletion]) -> None:
-        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True, unique=False)
         collection = self.client.collections.get(sanitized_collection_name)
         chunk_ids = [chunk.chunk_id for chunk in chunks_for_deletion]
         collection.data.delete_many(where=Filter.by_property("chunk_id").contains_any(chunk_ids))
@@ -112,7 +112,7 @@ class WeaviateIndex(EmbeddingIndex):
         log.debug(
             f"WEAVIATE VECTOR SEARCH CALLED: embedding_shape={embedding.shape}, k={k}, threshold={score_threshold}"
         )
-        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True, unique=False)
         collection = self.client.collections.get(sanitized_collection_name)
 
         try:
@@ -151,7 +151,7 @@ class WeaviateIndex(EmbeddingIndex):
         """
         Delete chunks by IDs if provided, otherwise drop the entire collection.
         """
-        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True, unique=False)
         if chunk_ids is None:
             # Drop entire collection if it exists
             if self.client.collections.exists(sanitized_collection_name):
@@ -181,7 +181,7 @@ class WeaviateIndex(EmbeddingIndex):
             raise NotImplementedError("Weaviate provider does not yet support native filtering")
 
         log.debug(f"WEAVIATE KEYWORD SEARCH CALLED: query='{query_string}', k={k}, threshold={score_threshold}")
-        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True, unique=False)
         collection = self.client.collections.get(sanitized_collection_name)
 
         # Perform BM25 keyword search on chunk_content field
@@ -243,7 +243,7 @@ class WeaviateIndex(EmbeddingIndex):
         log.debug(
             f"WEAVIATE HYBRID SEARCH CALLED: query='{query_string}', embedding_shape={embedding.shape}, k={k}, threshold={score_threshold}, reranker={reranker_type}"
         )
-        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(self.collection_name, weaviate_format=True, unique=False)
         collection = self.client.collections.get(sanitized_collection_name)
 
         # Ranked (RRF) reranker fusion type
@@ -365,8 +365,13 @@ class WeaviateVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProt
         await super().shutdown()
 
     async def register_vector_store(self, vector_store: VectorStore) -> None:
+        if self.kvstore is None:
+            raise RuntimeError("KVStore not initialized. Call initialize() before registering vector stores.")
+
         client = self._get_client()
-        sanitized_collection_name = sanitize_collection_name(vector_store.identifier, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(
+            vector_store.identifier, weaviate_format=True, unique=False
+        )
         # Create collection if it doesn't exist
         if not client.collections.exists(sanitized_collection_name):
             client.collections.create(
@@ -377,18 +382,27 @@ class WeaviateVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProt
                 ],
             )
 
+        key = f"{VECTOR_DBS_PREFIX}{vector_store.identifier}"
+        await self.kvstore.set(key=key, value=vector_store.model_dump_json())
+
         self.cache[vector_store.identifier] = VectorStoreWithIndex(
             vector_store, WeaviateIndex(client=client, collection_name=sanitized_collection_name), self.inference_api
         )
 
     async def unregister_vector_store(self, vector_store_id: str) -> None:
+        if self.kvstore is None:
+            raise RuntimeError("KVStore not initialized. Call initialize() before unregistering vector stores.")
+
         client = self._get_client()
-        sanitized_collection_name = sanitize_collection_name(vector_store_id, weaviate_format=True)
-        if vector_store_id not in self.cache or client.collections.exists(sanitized_collection_name) is False:
-            return
-        client.collections.delete(sanitized_collection_name)
-        await self.cache[vector_store_id].index.delete()
-        del self.cache[vector_store_id]
+        sanitized_collection_name = sanitize_collection_name(vector_store_id, weaviate_format=True, unique=False)
+
+        if vector_store_id in self.cache:
+            if client.collections.exists(sanitized_collection_name):
+                client.collections.delete(sanitized_collection_name)
+            await self.cache[vector_store_id].index.delete()
+            del self.cache[vector_store_id]
+
+        await self.kvstore.delete(key=f"{VECTOR_DBS_PREFIX}{vector_store_id}")
 
     async def _get_and_cache_vector_store_index(self, vector_store_id: str) -> VectorStoreWithIndex | None:
         if vector_store_id in self.cache:
@@ -405,7 +419,9 @@ class WeaviateVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProt
 
         vector_store = VectorStore.model_validate_json(vector_store_data)
         client = self._get_client()
-        sanitized_collection_name = sanitize_collection_name(vector_store.identifier, weaviate_format=True)
+        sanitized_collection_name = sanitize_collection_name(
+            vector_store.identifier, weaviate_format=True, unique=False
+        )
         if not client.collections.exists(sanitized_collection_name):
             raise ValueError(f"Collection with name `{sanitized_collection_name}` not found")
 

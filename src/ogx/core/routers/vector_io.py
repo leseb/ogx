@@ -357,7 +357,17 @@ class VectorIORouter(VectorIO):
                 )
             )
 
-        result = await provider.openai_create_vector_store(params)
+        try:
+            result = await provider.openai_create_vector_store(params)
+        except Exception:
+            logger.warning(
+                "Failed to create vector store in provider, rolling back registry entry",
+                vector_store_id=vector_store_id,
+                provider_id=provider_id,
+            )
+            await self.routing_table.unregister_vector_store(vector_store_id)
+            raise
+
         vector_stores_total.add(
             1,
             create_vector_metric_attributes(provider=provider_id, operation="create"),

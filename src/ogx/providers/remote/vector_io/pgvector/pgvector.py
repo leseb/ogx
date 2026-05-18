@@ -192,7 +192,7 @@ class PGVectorIndex(EmbeddingIndex):
                 # Sanitize the table name by replacing hyphens with underscores
                 # SQL doesn't allow hyphens in table names, and vector_store.identifier may contain hyphens
                 # when created with patterns like "test-vector-db-{uuid4()}"
-                sanitized_identifier = sanitize_collection_name(self.vector_store.identifier)
+                sanitized_identifier = sanitize_collection_name(self.vector_store.identifier, unique=False)
                 self.table_name = f"vs_{sanitized_identifier}"
                 self._quoted_table = _quote_ident(self.table_name)
 
@@ -915,14 +915,28 @@ class PGVectorVectorIOAdapter(OpenAIVectorStoreMixin, VectorIO, VectorStoresProt
         self.cache[vector_store.identifier] = index
 
     async def unregister_vector_store(self, vector_store_id: str) -> None:
-        # Remove provider index and cache
+        if self.kvstore is None:
+            raise RuntimeError("KVStore not initialized. Call initialize() before unregistering vector stores.")
+
+        # Ensure the index is loaded so we can drop the backing table.
+        # On a cold worker or after cache eviction the entry may be missing;
+        # loading it from KV avoids leaving an orphaned PostgreSQL table that
+        # would silently resurface on a later register with the same identifier.
+        if vector_store_id not in self.cache:
+            try:
+                await self._get_and_cache_vector_store_index(vector_store_id)
+            except VectorStoreNotFoundError:
+                log.info(
+                    "Vector store not found in cache or KV store during unregister, skipping table drop",
+                    vector_store_id=vector_store_id,
+                )
+
+        # Drop the backing table and remove from cache
         if vector_store_id in self.cache:
             await self.cache[vector_store_id].index.delete()
             del self.cache[vector_store_id]
 
         # Delete vector DB metadata from KV store
-        if self.kvstore is None:
-            raise RuntimeError("KVStore not initialized. Call initialize() before unregistering vector stores.")
         await self.kvstore.delete(key=f"{VECTOR_DBS_PREFIX}{vector_store_id}")
 
         # Delete vector store metadata from PGVector metadata_store table

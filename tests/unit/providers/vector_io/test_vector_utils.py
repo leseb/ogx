@@ -9,6 +9,7 @@ import time
 from ogx.providers.utils.vector_io.vector_utils import (
     generate_chunk_id,
     load_embedded_chunk_with_backward_compat,
+    sanitize_collection_name,
 )
 from ogx_api import Chunk, ChunkMetadata, VectorStoreFileObject
 
@@ -278,3 +279,44 @@ def test_load_embedded_chunk_fallbacks():
     assert chunk.embedding_model == "unknown"
     assert chunk.embedding_dimension == 0
     assert chunk.embedding == []
+
+
+def test_sanitize_collection_name_legacy_no_suffix():
+    """Legacy mode (unique=False) preserves the old many-to-one behavior."""
+    assert sanitize_collection_name("a-b", unique=False) == "a_b"
+    assert sanitize_collection_name("a_b", unique=False) == "a_b"
+    assert sanitize_collection_name("a/b", unique=False) == "a_b"
+
+
+def test_sanitize_collection_name_unique_suffix():
+    """With unique=True (default), a hash suffix is appended."""
+    result = sanitize_collection_name("a-b")
+    assert result.startswith("a_b_")
+    assert len(result) == len("a_b_") + 8
+
+
+def test_sanitize_collection_name_unique_prevents_collisions():
+    """Names that collide without the suffix produce distinct results with it."""
+    assert sanitize_collection_name("a-b") != sanitize_collection_name("a_b")
+    assert sanitize_collection_name("a-b") != sanitize_collection_name("a/b")
+    assert sanitize_collection_name("a_b") != sanitize_collection_name("a/b")
+
+
+def test_sanitize_collection_name_unique_is_deterministic():
+    """The same input always produces the same output."""
+    assert sanitize_collection_name("my-store") == sanitize_collection_name("my-store")
+
+
+def test_sanitize_collection_name_weaviate_legacy():
+    """Weaviate legacy mode strips non-alphanumeric and applies ProperCase."""
+    assert sanitize_collection_name("a-b", weaviate_format=True, unique=False) == "Ab"
+    assert sanitize_collection_name("ab", weaviate_format=True, unique=False) == "Ab"
+
+
+def test_sanitize_collection_name_weaviate_unique():
+    """Weaviate mode with unique=True prevents collisions."""
+    result_ab = sanitize_collection_name("a-b", weaviate_format=True)
+    result_plain = sanitize_collection_name("ab", weaviate_format=True)
+    assert result_ab != result_plain
+    assert result_ab.startswith("Ab_")
+    assert result_plain.startswith("Ab_")

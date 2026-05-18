@@ -51,26 +51,44 @@ class InteractionsStore:
         model: str,
         messages: list[dict[str, Any]],
         output_text: str,
+        output_message: dict[str, Any] | None = None,
     ) -> None:
-        """Persist a completed interaction for future chaining."""
+        """Persist a completed interaction for future chaining.
+
+        ``output_message`` is the full OpenAI-format assistant message dict
+        (including ``tool_calls`` when present).  It is stored alongside the
+        legacy ``output_text`` field so that ``get_interaction`` callers can
+        reconstruct structured assistant turns for conversation chaining.
+        """
+        interaction_data: dict[str, Any] = {
+            "messages": messages,
+            "output_text": output_text,
+        }
+        if output_message is not None:
+            interaction_data["output_message"] = output_message
+
         await self.sql_store.insert(
             self.reference.table_name,
             {
                 "id": interaction_id,
                 "created_at": created_at,
                 "model": model,
-                "interaction_data": {
-                    "messages": messages,
-                    "output_text": output_text,
-                },
+                "interaction_data": interaction_data,
             },
         )
 
     async def get_interaction(self, interaction_id: str) -> dict[str, Any] | None:
         """Retrieve a stored interaction by ID.
 
-        Returns the ``interaction_data`` dict (messages + output_text), or
-        ``None`` if not found.
+        Returns the ``interaction_data`` dict which contains:
+
+        - ``messages``: the input messages for this interaction
+        - ``output_text``: plain text output (always present)
+        - ``output_message``: full OpenAI-format assistant message dict
+          including ``tool_calls`` (present for interactions stored after the
+          structured output fix; absent for legacy rows)
+
+        Returns ``None`` if the interaction is not found.
         """
         row = await self.sql_store.fetch_one(
             self.reference.table_name,

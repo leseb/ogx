@@ -32,6 +32,7 @@ from ogx.core.storage.datatypes import (
 )
 from ogx.core.storage.sqlstore.sqlstore import register_sqlstore_backends
 from ogx_api import (
+    ConflictError,
     ConversationItemNotFoundError,
     ConversationNotFoundError,
     InvalidParameterError,
@@ -590,3 +591,98 @@ async def test_list_items_empty_conversation(service):
     assert result.has_more is False
     assert result.first_id == ""
     assert result.last_id == ""
+
+
+async def test_add_items_rejects_duplicate_ids_in_batch(service):
+    """Adding items with duplicate IDs within the same batch raises ConflictError."""
+    conversation = await service.create_conversation(CreateConversationRequest())
+
+    duplicate_id = "msg_" + "d" * 48
+    items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text="First")],
+            id=duplicate_id,
+            status="completed",
+        ),
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text="Second")],
+            id=duplicate_id,
+            status="completed",
+        ),
+    ]
+
+    with pytest.raises(ConflictError, match="duplicate item IDs within request batch"):
+        await service.add_items(conversation.id, AddItemsRequest(items=items))
+
+    # No items should have been inserted
+    result = await service.list_items(ListItemsRequest(conversation_id=conversation.id))
+    assert len(result.data) == 0
+
+
+async def test_add_items_rejects_existing_ids(service):
+    """Adding an item with an ID that already exists in the database raises ConflictError."""
+    conversation = await service.create_conversation(CreateConversationRequest())
+
+    existing_id = "msg_" + "e" * 48
+    items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text="Original")],
+            id=existing_id,
+            status="completed",
+        ),
+    ]
+    await service.add_items(conversation.id, AddItemsRequest(items=items))
+
+    # Attempt to add another item with the same ID
+    new_items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text="Overwrite attempt")],
+            id=existing_id,
+            status="completed",
+        ),
+    ]
+
+    with pytest.raises(ConflictError, match="item IDs already exist"):
+        await service.add_items(conversation.id, AddItemsRequest(items=new_items))
+
+    # Original item should be unchanged
+    item = await service.retrieve(RetrieveItemRequest(conversation_id=conversation.id, item_id=existing_id))
+    assert item.content[0].text == "Original"
+
+
+async def test_add_items_rejects_existing_ids_across_conversations(service):
+    """Adding an item whose ID exists in another conversation raises ConflictError.
+
+    Item IDs are globally unique primary keys, so reusing an ID from a different
+    conversation must be rejected to prevent silently moving history.
+    """
+    conv1 = await service.create_conversation(CreateConversationRequest())
+    conv2 = await service.create_conversation(CreateConversationRequest())
+
+    shared_id = "msg_" + "f" * 48
+    items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text="In conv1")],
+            id=shared_id,
+            status="completed",
+        ),
+    ]
+    await service.add_items(conv1.id, AddItemsRequest(items=items))
+
+    # Attempt to add the same ID to a different conversation
+    with pytest.raises(ConflictError, match="item IDs already exist"):
+        await service.add_items(conv2.id, AddItemsRequest(items=items))
+
+    # Item should still belong to conv1
+    item = await service.retrieve(RetrieveItemRequest(conversation_id=conv1.id, item_id=shared_id))
+    assert item.content[0].text == "In conv1"

@@ -4,6 +4,7 @@
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
 import asyncio
+import threading
 from typing import Any, NamedTuple
 
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +34,22 @@ from ogx_api import (
 from ogx_api.internal.sqlstore import ColumnDefinition, ColumnType
 
 logger = get_logger(name=__name__, category="inference")
+
+
+class InferenceStoreWriteError(Exception):
+    """Raised when one or more background writes failed during flush or shutdown.
+
+    Attributes:
+        errors: The list of exceptions from failed write operations.
+    """
+
+    def __init__(self, errors: list[Exception]) -> None:
+        self.errors = errors
+        count = len(errors)
+        first_error = str(errors[0])
+        super().__init__(
+            f"Failed to persist {count} chat completion(s) during background write. First error: {first_error}"
+        )
 
 
 class _WriteItem(NamedTuple):
@@ -111,6 +128,10 @@ class InferenceStore:
         self._worker_tasks: list[asyncio.Task[Any]] = []
         self._max_write_queue_size: int = reference.max_write_queue_size
         self._num_writers: int = max(1, reference.num_writers)
+        # Accumulates write errors from background workers so flush()/shutdown()
+        # can surface them to callers instead of silently dropping writes.
+        self._write_errors: list[Exception] = []
+        self._write_errors_lock: threading.Lock = threading.Lock()
 
     async def initialize(self):
         """Create the necessary tables if they don't exist."""
@@ -134,6 +155,19 @@ class InferenceStore:
             },
         )
 
+    def _drain_write_errors(self) -> list[Exception]:
+        """Atomically drain accumulated write errors and return them."""
+        with self._write_errors_lock:
+            errors = list(self._write_errors)
+            self._write_errors.clear()
+        return errors
+
+    def _raise_on_write_errors(self) -> None:
+        """Raise InferenceStoreWriteError if any background writes failed since the last drain."""
+        errors = self._drain_write_errors()
+        if errors:
+            raise InferenceStoreWriteError(errors)
+
     async def shutdown(self) -> None:
         if not self._worker_tasks:
             return
@@ -148,11 +182,18 @@ class InferenceStore:
             except asyncio.CancelledError:
                 pass
         self._worker_tasks.clear()
+        self._raise_on_write_errors()
 
     async def flush(self) -> None:
-        """Wait for all queued writes to complete. Useful for testing."""
+        """Wait for all queued writes to complete and raise on any failures.
+
+        Raises:
+            InferenceStoreWriteError: If any background writes failed since the last
+                flush or shutdown call.
+        """
         if self.enable_write_queue and self._queue is not None:
             await self._queue.join()
+            self._raise_on_write_errors()
 
     async def _ensure_workers_started(self) -> None:
         """Ensure the async write queue workers run on the current loop."""
@@ -202,7 +243,14 @@ class InferenceStore:
                 with activate_request_context(item.request_context):
                     await self._write_chat_completion(item.completion, item.messages)
             except Exception as e:  # noqa: BLE001
-                logger.error("Error writing chat completion", error=str(e))
+                completion_id = getattr(item.completion, "id", "<unknown>")
+                logger.error(
+                    "Failed to write chat completion in background worker",
+                    completion_id=completion_id,
+                    error=str(e),
+                )
+                with self._write_errors_lock:
+                    self._write_errors.append(e)
             finally:
                 self._queue.task_done()
 

@@ -21,6 +21,8 @@ from ogx_api.messages.models import (
     AnthropicToolDef,
     AnthropicToolResultBlock,
     AnthropicToolUseBlock,
+    MessageBatch,
+    MessageBatchRequestCounts,
 )
 
 
@@ -386,3 +388,134 @@ class TestStreamingTranslation:
 
         msg_delta = [e for e in events if e.type == "message_delta"]
         assert msg_delta[0].delta.stop_reason == "tool_use"
+
+
+class TestBatchRecovery:
+    """Tests for _recover_incomplete_batches startup recovery."""
+
+    @staticmethod
+    def _make_kvstore_mock(batches: list[MessageBatch]) -> AsyncMock:
+        """Build an AsyncMock KVStore pre-loaded with the given batches."""
+        store: dict[str, str] = {}
+        for b in batches:
+            store[f"msgbatch:{b.id}"] = b.model_dump_json()
+
+        kvstore = AsyncMock()
+
+        async def _values_in_range(start: str, end: str) -> list[str]:
+            return [v for k, v in store.items() if start <= k <= end]
+
+        async def _set(key: str, value: str, expiration=None) -> None:
+            store[key] = value
+
+        async def _get(key: str) -> str | None:
+            return store.get(key)
+
+        kvstore.values_in_range = AsyncMock(side_effect=_values_in_range)
+        kvstore.set = AsyncMock(side_effect=_set)
+        kvstore.get = AsyncMock(side_effect=_get)
+        # Expose the store so tests can inspect post-recovery state.
+        kvstore._store = store
+        return kvstore
+
+    @staticmethod
+    def _build_impl(kvstore: AsyncMock) -> BuiltinMessagesImpl:
+        config = MessagesConfig(kvstore=KVStoreReference(backend="kv_default", namespace="test"))
+        return BuiltinMessagesImpl(config=config, inference_api=AsyncMock(), kvstore=kvstore)
+
+    async def test_in_progress_batch_recovered_to_ended(self):
+        batch = MessageBatch(
+            id="msgbatch_aaa",
+            processing_status="in_progress",
+            request_counts=MessageBatchRequestCounts(processing=5),
+            created_at="2025-01-01T00:00:00+00:00",
+            expires_at="2025-01-02T00:00:00+00:00",
+        )
+        kvstore = self._make_kvstore_mock([batch])
+        impl = self._build_impl(kvstore)
+
+        await impl._recover_incomplete_batches()
+
+        raw = kvstore._store["msgbatch:msgbatch_aaa"]
+        recovered = MessageBatch.model_validate_json(raw)
+        assert recovered.processing_status == "ended"
+        assert recovered.ended_at is not None
+        assert recovered.request_counts.processing == 0
+        assert recovered.request_counts.errored == 5
+
+    async def test_canceling_batch_recovered_to_ended(self):
+        batch = MessageBatch(
+            id="msgbatch_bbb",
+            processing_status="canceling",
+            request_counts=MessageBatchRequestCounts(processing=3, succeeded=2),
+            created_at="2025-01-01T00:00:00+00:00",
+            expires_at="2025-01-02T00:00:00+00:00",
+        )
+        kvstore = self._make_kvstore_mock([batch])
+        impl = self._build_impl(kvstore)
+
+        await impl._recover_incomplete_batches()
+
+        raw = kvstore._store["msgbatch:msgbatch_bbb"]
+        recovered = MessageBatch.model_validate_json(raw)
+        assert recovered.processing_status == "ended"
+        assert recovered.request_counts.processing == 0
+        assert recovered.request_counts.succeeded == 2
+        assert recovered.request_counts.errored == 3
+
+    async def test_ended_batch_not_modified(self):
+        batch = MessageBatch(
+            id="msgbatch_ccc",
+            processing_status="ended",
+            request_counts=MessageBatchRequestCounts(processing=0, succeeded=10),
+            created_at="2025-01-01T00:00:00+00:00",
+            expires_at="2025-01-02T00:00:00+00:00",
+        )
+        kvstore = self._make_kvstore_mock([batch])
+        impl = self._build_impl(kvstore)
+
+        await impl._recover_incomplete_batches()
+
+        raw = kvstore._store["msgbatch:msgbatch_ccc"]
+        recovered = MessageBatch.model_validate_json(raw)
+        assert recovered.processing_status == "ended"
+        assert recovered.request_counts.succeeded == 10
+        assert recovered.request_counts.errored == 0
+
+    async def test_no_batches_is_noop(self):
+        kvstore = self._make_kvstore_mock([])
+        impl = self._build_impl(kvstore)
+
+        await impl._recover_incomplete_batches()
+
+        kvstore.set.assert_not_called()
+
+    async def test_mixed_batches_only_recovers_non_terminal(self):
+        ended = MessageBatch(
+            id="msgbatch_ended",
+            processing_status="ended",
+            request_counts=MessageBatchRequestCounts(processing=0, succeeded=4),
+            created_at="2025-01-01T00:00:00+00:00",
+            expires_at="2025-01-02T00:00:00+00:00",
+        )
+        in_progress = MessageBatch(
+            id="msgbatch_active",
+            processing_status="in_progress",
+            request_counts=MessageBatchRequestCounts(processing=7),
+            created_at="2025-01-01T00:00:00+00:00",
+            expires_at="2025-01-02T00:00:00+00:00",
+        )
+        kvstore = self._make_kvstore_mock([ended, in_progress])
+        impl = self._build_impl(kvstore)
+
+        await impl._recover_incomplete_batches()
+
+        # Only the in-progress batch should have been written
+        set_calls = kvstore.set.call_args_list
+        written_keys = [call.args[0] for call in set_calls]
+        assert "msgbatch:msgbatch_active" in written_keys
+        assert "msgbatch:msgbatch_ended" not in written_keys
+
+        recovered = MessageBatch.model_validate_json(kvstore._store["msgbatch:msgbatch_active"])
+        assert recovered.processing_status == "ended"
+        assert recovered.request_counts.errored == 7

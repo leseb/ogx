@@ -28,15 +28,33 @@ def proper_case(s: str) -> str:
     return s[0].upper() + s[1:].lower() if s else s
 
 
-def sanitize_collection_name(name: str, weaviate_format=False) -> str:
-    """
-    Sanitize collection name to ensure it only contains numbers, letters, and underscores.
-    Any other characters are replaced with underscores.
+def sanitize_collection_name(name: str, weaviate_format: bool = False, unique: bool = True) -> str:
+    """Sanitize collection name to ensure it only contains valid characters.
+
+    The default sanitization is many-to-one: different input names can produce
+    the same sanitized output (e.g. ``a-b`` and ``a_b`` both become ``a_b``).
+    When ``unique=True`` a short hash suffix derived from the original *name*
+    is appended so that distinct inputs always produce distinct outputs,
+    preventing cross-store data corruption.
+
+    Args:
+        name: The raw collection name to sanitize.
+        weaviate_format: When True, strip non-alphanumeric characters and
+            apply ProperCase (Weaviate naming convention).
+        unique: When True (default) append ``_<8-char hex digest>`` of
+            *name* to guarantee uniqueness.  Set to False when reproducing
+            legacy sanitized names for backward compatibility with stores
+            created before the uniqueness fix.
     """
     if not weaviate_format:
         s = re.sub(r"[^a-zA-Z0-9_]", "_", name)
     else:
         s = proper_case(re.sub(r"[^a-zA-Z0-9]", "", name))
+
+    if unique:
+        suffix = hashlib.sha256(name.encode()).hexdigest()[:8]
+        s = f"{s}_{suffix}"
+
     return s
 
 

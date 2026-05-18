@@ -6,6 +6,7 @@
 
 """Unit tests for previous_interaction_id conversation chaining."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -87,6 +88,7 @@ class TestPreviousInteractionId:
         assert call_kwargs["model"] == "m"
         assert call_kwargs["messages"] == messages
         assert call_kwargs["output_text"] == "Hello!"
+        assert call_kwargs["output_message"] == {"role": "assistant", "content": "Hello!"}
 
     async def test_interaction_stored_after_streaming(self, impl):
         """Streaming responses are persisted after the stream completes."""
@@ -114,6 +116,7 @@ class TestPreviousInteractionId:
         call_kwargs = impl.store.store_interaction.call_args.kwargs
         assert call_kwargs["messages"] == messages
         assert call_kwargs["output_text"] == "Hello world"
+        assert call_kwargs["output_message"] == {"role": "assistant", "content": "Hello world"}
 
     async def test_multi_hop_chaining(self, impl):
         """Chain through multiple interactions preserving full history."""
@@ -155,3 +158,140 @@ class TestPreviousInteractionId:
         assert messages3[2] == {"role": "user", "content": "How are you?"}
         assert messages3[3] == {"role": "assistant", "content": "I'm doing well!"}
         assert messages3[4] == {"role": "user", "content": "Great to hear."}
+
+    async def test_chaining_uses_output_message_when_present(self, impl):
+        """Chaining uses the structured output_message over plain output_text."""
+        stored_data = {
+            "messages": [
+                {"role": "user", "content": "What is the weather?"},
+            ],
+            "output_text": "Let me check.",
+            "output_message": {
+                "role": "assistant",
+                "content": "Let me check.",
+                "tool_calls": [
+                    {
+                        "id": "call_abc",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"location": "NYC"}',
+                        },
+                    }
+                ],
+            },
+        }
+        impl.store.get_interaction = AsyncMock(return_value=stored_data)
+
+        request = GoogleCreateInteractionRequest(
+            model="m",
+            input="Thanks for the info.",
+            previous_interaction_id="interaction-with-tools",
+        )
+        messages = await impl._build_messages(request)
+
+        assert len(messages) == 3
+        assert messages[0] == {"role": "user", "content": "What is the weather?"}
+        assert messages[1] == stored_data["output_message"]
+        assert messages[1]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert messages[2] == {"role": "user", "content": "Thanks for the info."}
+
+    async def test_chaining_falls_back_to_output_text_for_legacy_rows(self, impl):
+        """Legacy rows without output_message fall back to output_text."""
+        stored_data = {
+            "messages": [
+                {"role": "user", "content": "Hello"},
+            ],
+            "output_text": "Hi there!",
+        }
+        impl.store.get_interaction = AsyncMock(return_value=stored_data)
+
+        request = GoogleCreateInteractionRequest(
+            model="m",
+            input="How are you?",
+            previous_interaction_id="interaction-legacy",
+        )
+        messages = await impl._build_messages(request)
+
+        assert len(messages) == 3
+        assert messages[1] == {"role": "assistant", "content": "Hi there!"}
+
+    async def test_function_call_stored_in_non_streaming(self, impl):
+        """Non-streaming responses with tool calls store the full output_message."""
+        openai_resp = MagicMock()
+        openai_resp.choices = [MagicMock()]
+        openai_resp.choices[0].message = MagicMock()
+        openai_resp.choices[0].message.content = "I'll check the weather."
+
+        tc = MagicMock()
+        tc.id = "call_xyz"
+        tc.function = MagicMock()
+        tc.function.name = "get_weather"
+        tc.function.arguments = '{"location": "NYC"}'
+        openai_resp.choices[0].message.tool_calls = [tc]
+        openai_resp.choices[0].finish_reason = "tool_calls"
+        openai_resp.usage = MagicMock()
+        openai_resp.usage.prompt_tokens = 10
+        openai_resp.usage.completion_tokens = 15
+
+        messages = [{"role": "user", "content": "What's the weather?"}]
+        await impl._openai_to_google(openai_resp, "m", messages)
+
+        impl.store.store_interaction.assert_called_once()
+        call_kwargs = impl.store.store_interaction.call_args.kwargs
+        output_msg = call_kwargs["output_message"]
+        assert output_msg["role"] == "assistant"
+        assert output_msg["content"] == "I'll check the weather."
+        assert len(output_msg["tool_calls"]) == 1
+        assert output_msg["tool_calls"][0]["id"] == "call_xyz"
+        assert output_msg["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert json.loads(output_msg["tool_calls"][0]["function"]["arguments"]) == {"location": "NYC"}
+
+    async def test_function_call_stored_in_streaming(self, impl):
+        """Streaming responses with tool calls store the full output_message."""
+        chunks = []
+
+        # Text chunk
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock()]
+        chunk1.choices[0].delta = MagicMock()
+        chunk1.choices[0].delta.content = "Let me check."
+        chunk1.choices[0].delta.tool_calls = None
+        chunk1.choices[0].finish_reason = None
+        chunk1.usage = None
+        chunks.append(chunk1)
+
+        # Tool call start
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock()]
+        chunk2.choices[0].delta = MagicMock()
+        chunk2.choices[0].delta.content = None
+        tc_delta = MagicMock()
+        tc_delta.index = 0
+        tc_delta.id = "call_stream1"
+        tc_delta.function = MagicMock()
+        tc_delta.function.name = "search"
+        tc_delta.function.arguments = '{"q": "test"}'
+        chunk2.choices[0].delta.tool_calls = [tc_delta]
+        chunk2.choices[0].finish_reason = "tool_calls"
+        chunk2.usage = None
+        chunks.append(chunk2)
+
+        async def mock_stream():
+            for c in chunks:
+                yield c
+
+        messages = [{"role": "user", "content": "Find something"}]
+        events = []
+        async for event in impl._stream_openai_to_google(mock_stream(), "m", messages):
+            events.append(event)
+
+        impl.store.store_interaction.assert_called_once()
+        call_kwargs = impl.store.store_interaction.call_args.kwargs
+        output_msg = call_kwargs["output_message"]
+        assert output_msg["role"] == "assistant"
+        assert output_msg["content"] == "Let me check."
+        assert len(output_msg["tool_calls"]) == 1
+        assert output_msg["tool_calls"][0]["id"] == "call_stream1"
+        assert output_msg["tool_calls"][0]["function"]["name"] == "search"
+        assert output_msg["tool_calls"][0]["function"]["arguments"] == '{"q": "test"}'

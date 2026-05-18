@@ -178,8 +178,8 @@ class CommonRoutingTableImpl(RoutingTable):
         user = get_authenticated_user()
         if not is_action_allowed(self.policy, "delete", obj, user):
             raise AccessDeniedError("delete", obj, user)
-        await self.dist_registry.delete(obj.type, obj.identifier)
         await unregister_object_from_provider(obj, self.impls_by_provider_id[obj.provider_id])
+        await self.dist_registry.delete(obj.type, obj.identifier)
 
     async def register_object(self, obj: RoutableObjectWithProvider) -> RoutableObjectWithProvider:
         # if provider_id is not specified, pick an arbitrary one from existing entries

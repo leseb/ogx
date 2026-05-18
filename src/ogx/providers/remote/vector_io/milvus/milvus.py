@@ -82,7 +82,7 @@ class MilvusIndex(EmbeddingIndex):
         use_native_hybrid: bool = False,
     ):
         self.client = client
-        self.collection_name = sanitize_collection_name(collection_name)
+        self.collection_name = sanitize_collection_name(collection_name, unique=False)
         self.consistency_level = consistency_level
         self.kvstore = kvstore
         self.use_native_hybrid = use_native_hybrid

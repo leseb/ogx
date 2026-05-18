@@ -14,7 +14,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, Sp
 
 from ogx.core.storage.datatypes import InferenceStoreReference, SqliteSqlStoreConfig
 from ogx.core.storage.sqlstore.sqlstore import register_sqlstore_backends
-from ogx.providers.utils.inference.inference_store import InferenceStore
+from ogx.providers.utils.inference.inference_store import InferenceStore, InferenceStoreWriteError
 from ogx_api import (
     OpenAIChatCompletion,
     OpenAIChatCompletionContentPartTextParam,
@@ -691,3 +691,123 @@ async def test_otel_worker_does_not_inherit_first_request_trace():
     write_3_trace = spans_by_name["db-write-comp-3"].context.trace_id
     assert write_3_trace != first_request_trace
     assert write_3_trace != second_request_trace
+
+
+async def test_flush_raises_on_background_write_failure():
+    """flush() surfaces write errors instead of silently swallowing them.
+
+    Before this fix, the background worker caught all exceptions, logged them,
+    and called task_done(). flush() waited on queue.join() which returned
+    normally even when writes failed -- silent permanent data loss.
+    """
+    reference = InferenceStoreReference(
+        backend="sql_default",
+        table_name="flush_error_test",
+        num_writers=1,
+    )
+    store = InferenceStore(reference, policy=[])
+    await store.initialize()
+    store.enable_write_queue = True
+
+    injected_error = RuntimeError("simulated transient DB error")
+
+    original_write = store._write_chat_completion
+
+    async def failing_write(completion, messages):
+        raise injected_error
+
+    store._write_chat_completion = failing_write
+
+    base_time = int(time.time())
+    completion = create_test_chat_completion("fail-test-1", base_time)
+    input_messages = [OpenAIUserMessageParam(role="user", content="will fail")]
+    await store.store_chat_completion(completion, input_messages)
+
+    with pytest.raises(InferenceStoreWriteError) as exc_info:
+        await store.flush()
+
+    assert len(exc_info.value.errors) == 1
+    assert exc_info.value.errors[0] is injected_error
+    assert "Failed to persist 1 chat completion(s)" in str(exc_info.value)
+
+    # Subsequent flush with no new errors should succeed
+    await store.flush()
+
+    # Restore the real writer and verify the store still works
+    store._write_chat_completion = original_write
+    completion2 = create_test_chat_completion("success-after-fail", base_time + 1)
+    await store.store_chat_completion(
+        completion2,
+        [OpenAIUserMessageParam(role="user", content="works now")],
+    )
+    await store.flush()
+
+    result = await store.get_chat_completion("success-after-fail")
+    assert result.id == "success-after-fail"
+    await store.shutdown()
+
+
+async def test_shutdown_raises_on_background_write_failure():
+    """shutdown() surfaces write errors accumulated by the background worker."""
+    reference = InferenceStoreReference(
+        backend="sql_default",
+        table_name="shutdown_error_test",
+        num_writers=1,
+    )
+    store = InferenceStore(reference, policy=[])
+    await store.initialize()
+    store.enable_write_queue = True
+
+    async def failing_write(completion, messages):
+        raise ValueError("simulated storage failure")
+
+    store._write_chat_completion = failing_write
+
+    base_time = int(time.time())
+    completion = create_test_chat_completion("shutdown-fail-1", base_time)
+    await store.store_chat_completion(
+        completion,
+        [OpenAIUserMessageParam(role="user", content="will fail on shutdown")],
+    )
+
+    with pytest.raises(InferenceStoreWriteError) as exc_info:
+        await store.shutdown()
+
+    assert len(exc_info.value.errors) == 1
+    assert "simulated storage failure" in str(exc_info.value)
+
+
+async def test_flush_aggregates_multiple_write_failures():
+    """Multiple failed writes are collected and raised together on flush()."""
+    reference = InferenceStoreReference(
+        backend="sql_default",
+        table_name="multi_error_test",
+        num_writers=1,
+    )
+    store = InferenceStore(reference, policy=[])
+    await store.initialize()
+    store.enable_write_queue = True
+
+    call_count = 0
+
+    async def counting_fail(completion, messages):
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError(f"error #{call_count}")
+
+    store._write_chat_completion = counting_fail
+
+    base_time = int(time.time())
+    for i in range(3):
+        completion = create_test_chat_completion(f"multi-fail-{i}", base_time + i)
+        await store.store_chat_completion(
+            completion,
+            [OpenAIUserMessageParam(role="user", content=f"msg {i}")],
+        )
+
+    with pytest.raises(InferenceStoreWriteError) as exc_info:
+        await store.flush()
+
+    assert len(exc_info.value.errors) == 3
+    assert "Failed to persist 3 chat completion(s)" in str(exc_info.value)
+    await store.shutdown()

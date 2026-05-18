@@ -236,6 +236,11 @@ class SQLiteVecIndex(EmbeddingIndex):
                         metadata_data,
                     )
 
+                    # Delete existing vec rows for these chunk_ids to prevent
+                    # stale embeddings (vec0 virtual tables do not support ON CONFLICT)
+                    chunk_ids = [(chunk.chunk_id,) for chunk in batch_chunks]
+                    cur.executemany(f"DELETE FROM [{self.vector_table}] WHERE id = ?;", chunk_ids)
+
                     # Insert vector embeddings
                     embedding_data = [
                         ((chunk.chunk_id, serialize_vector(emb.tolist())))

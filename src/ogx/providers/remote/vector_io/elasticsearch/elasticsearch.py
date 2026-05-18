@@ -164,13 +164,22 @@ class ElasticsearchIndex(EmbeddingIndex):
                 client=self.client, actions=actions, timeout="300s", refresh=True, raise_on_error=False, stats_only=True
             )
             if error_count > 0:
-                log.warning(
-                    f"{error_count} out of {len(chunks)} documents failed to upload in Elasticsearch index {self.collection_name}"
+                raise RuntimeError(
+                    f"{error_count} out of {len(chunks)} documents failed to upload "
+                    f"in Elasticsearch index {self.collection_name}"
                 )
 
-            log.info(f"Successfully added {successful_count} chunks to Elasticsearch index {self.collection_name}")
+            log.info(
+                "Successfully added chunks to Elasticsearch index",
+                count=successful_count,
+                index=self.collection_name,
+            )
         except Exception as e:
-            log.error(f"Error adding chunks to Elasticsearch index {self.collection_name}: {e}")
+            log.error(
+                "Failed to add chunks to Elasticsearch index",
+                index=self.collection_name,
+                error=str(e),
+            )
             raise
 
     async def delete_chunks(self, chunks_for_deletion: list[ChunkForDeletion]) -> None:
