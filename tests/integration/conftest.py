@@ -151,7 +151,7 @@ def pytest_configure(config):
             run_config = run_config_from_dynamic_config_spec(stack_config)
             inference_providers = run_config.providers.get("inference", [])
             if any("sentence-transformers" in p.provider_type for p in inference_providers):
-                config.option.embedding_model = "sentence-transformers/nomic-ai/nomic-embed-text-v1.5"
+                config.option.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def pytest_addoption(parser):
@@ -192,8 +192,8 @@ def pytest_addoption(parser):
     parser.addoption(
         "--embedding-dimension",
         type=int,
-        default=768,
-        help="Output dimensionality of the embedding model to use for testing. Default: 768",
+        default=384,
+        help="Output dimensionality of the embedding model to use for testing. Default: 384",
     )
 
     parser.addoption(
@@ -231,6 +231,7 @@ MODEL_SHORT_IDS = {
     "meta-llama/Llama-3.2-90B-Vision-Instruct": "90B",
     "meta-llama/Llama-3.3-70B-Instruct": "70B",
     "nomic-ai/nomic-embed-text-v1.5": "Nomic-v1.5",
+    "all-MiniLM-L6-v2": "MiniLM",
 }
 
 
