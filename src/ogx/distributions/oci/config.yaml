@@ -14,7 +14,7 @@ providers:
       oci_auth_type: ${env.OCI_AUTH_TYPE:=instance_principal}
       oci_config_file_path: ${env.OCI_CONFIG_FILE_PATH:=~/.oci/config}
       oci_config_profile: ${env.OCI_CLI_PROFILE:=DEFAULT}
-      oci_region: ${env.OCI_REGION:=us-ashburn-1}
+      oci_region: ${env.OCI_REGION}
       oci_compartment_id: ${env.OCI_COMPARTMENT_OCID:=}
   vector_io:
   - provider_id: faiss

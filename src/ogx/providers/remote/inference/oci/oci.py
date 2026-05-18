@@ -37,6 +37,8 @@ class OCIInferenceAdapter(OpenAIMixin):
 
     embedding_models: list[str] = []
 
+    _resolved_region: str | None = None
+
     async def initialize(self) -> None:
         """Initialize and validate OCI configuration."""
         if self.config.oci_auth_type not in VALID_OCI_AUTH_TYPES:
@@ -48,8 +50,30 @@ class OCIInferenceAdapter(OpenAIMixin):
         if not self.config.oci_compartment_id:
             raise ValueError("OCI_COMPARTMENT_OCID is a required parameter. Either set in env variable or config.")
 
+        self._resolved_region = self._resolve_region()
+
+    def _resolve_region(self) -> str:
+        """Resolve the OCI region from explicit config, OCI profile, or default.
+
+        Priority order:
+        1. Explicitly configured oci_region (via config or OCI_REGION env var)
+        2. Region from OCI config profile (when using config_file auth)
+        3. Default region (us-ashburn-1)
+        """
+        if self.config.oci_region:
+            return self.config.oci_region
+
+        if self.config.oci_auth_type == OCI_AUTH_TYPE_CONFIG_FILE:
+            profile_config = oci.config.from_file(self.config.oci_config_file_path, self.config.oci_config_profile)
+            profile_region = profile_config.get("region")
+            if profile_region:
+                logger.info("Using region from OCI config profile", region=profile_region)
+                return profile_region
+
+        return DEFAULT_OCI_REGION
+
     def get_base_url(self) -> str:
-        region = self.config.oci_region or DEFAULT_OCI_REGION
+        region = self._resolved_region or DEFAULT_OCI_REGION
         return f"https://inference.generativeai.{region}.oci.oraclecloud.com/20231130/actions/v1"
 
     def get_api_key(self) -> str | None:
@@ -79,14 +103,12 @@ class OCIInferenceAdapter(OpenAIMixin):
         return None
 
     def _get_oci_config(self) -> dict:
+        region = self._resolved_region or DEFAULT_OCI_REGION
         if self.config.oci_auth_type == OCI_AUTH_TYPE_INSTANCE_PRINCIPAL:
-            config = {"region": self.config.oci_region}
+            config = {"region": region}
         elif self.config.oci_auth_type == OCI_AUTH_TYPE_CONFIG_FILE:
             config = oci.config.from_file(self.config.oci_config_file_path, self.config.oci_config_profile)
-            if not config.get("region"):
-                raise ValueError(
-                    "Region not specified in config. Please specify in config or with OCI_REGION env variable."
-                )
+            config["region"] = region
 
         return config
 

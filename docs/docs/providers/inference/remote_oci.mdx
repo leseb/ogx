@@ -42,7 +42,7 @@ https://docs.oracle.com/en-us/iaas/Content/generative-ai/home.htm
 | `network.timeout.read` | `float \| None` | No |  | Read timeout in seconds. |
 | `network.headers` | `dict[str, str] \| None` | No |  | Additional HTTP headers to include in all requests. |
 | `oci_auth_type` | `str` | No | instance_principal | OCI authentication type (must be one of: instance_principal, config_file) |
-| `oci_region` | `str` | No | us-ashburn-1 | OCI region (e.g., us-ashburn-1) |
+| `oci_region` | `str \| None` | No |  | OCI region (e.g., us-ashburn-1). When using config_file auth, the region is read from the OCI profile if not set here. |
 | `oci_compartment_id` | `str` | No |  | OCI compartment ID for the Generative AI service |
 | `oci_config_file_path` | `str` | No | ~/.oci/config | OCI config file path (required if oci_auth_type is config_file) |
 | `oci_config_profile` | `str` | No | DEFAULT | OCI config profile (required if oci_auth_type is config_file) |
@@ -53,6 +53,6 @@ https://docs.oracle.com/en-us/iaas/Content/generative-ai/home.htm
 oci_auth_type: ${env.OCI_AUTH_TYPE:=instance_principal}
 oci_config_file_path: ${env.OCI_CONFIG_FILE_PATH:=~/.oci/config}
 oci_config_profile: ${env.OCI_CLI_PROFILE:=DEFAULT}
-oci_region: ${env.OCI_REGION:=us-ashburn-1}
+oci_region: ${env.OCI_REGION}
 oci_compartment_id: ${env.OCI_COMPARTMENT_OCID:=}
 ```

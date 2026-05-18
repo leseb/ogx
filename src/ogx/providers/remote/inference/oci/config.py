@@ -43,9 +43,9 @@ class OCIConfig(RemoteInferenceProviderConfig):
         description="OCI authentication type (must be one of: instance_principal, config_file)",
         default_factory=lambda: os.getenv("OCI_AUTH_TYPE", "instance_principal"),
     )
-    oci_region: str = Field(
-        default_factory=lambda: os.getenv("OCI_REGION", "us-ashburn-1"),
-        description="OCI region (e.g., us-ashburn-1)",
+    oci_region: str | None = Field(
+        default_factory=lambda: os.getenv("OCI_REGION"),
+        description="OCI region (e.g., us-ashburn-1). When using config_file auth, the region is read from the OCI profile if not set here.",
     )
     oci_compartment_id: str = Field(
         default_factory=lambda: os.getenv("OCI_COMPARTMENT_OCID", ""),
@@ -66,7 +66,7 @@ class OCIConfig(RemoteInferenceProviderConfig):
         oci_auth_type: str = "${env.OCI_AUTH_TYPE:=instance_principal}",
         oci_config_file_path: str = "${env.OCI_CONFIG_FILE_PATH:=~/.oci/config}",
         oci_config_profile: str = "${env.OCI_CLI_PROFILE:=DEFAULT}",
-        oci_region: str = "${env.OCI_REGION:=us-ashburn-1}",
+        oci_region: str = "${env.OCI_REGION}",
         oci_compartment_id: str = "${env.OCI_COMPARTMENT_OCID:=}",
         **kwargs,
     ) -> dict[str, Any]:
