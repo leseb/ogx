@@ -780,10 +780,12 @@ class OpenAICompletionLogprobs(BaseModel):
 class OpenAICompletionChoice(BaseModel):
     """A choice from an OpenAI-compatible completion response."""
 
-    finish_reason: OpenAIFinishReason = Field(..., description="The reason the model stopped generating.")
+    finish_reason: OpenAIFinishReason | None = Field(
+        default=None, json_schema_extra=nullable_openai_style, description="The reason the model stopped generating."
+    )
     text: str = Field(..., description="The text of the choice.")
     index: int = Field(..., ge=0, description="The index of the choice.")
-    logprobs: OpenAIChoiceLogprobs | None = Field(
+    logprobs: OpenAICompletionLogprobs | None = Field(
         default=None, description="The log probabilities for the tokens in the choice."
     )
 
