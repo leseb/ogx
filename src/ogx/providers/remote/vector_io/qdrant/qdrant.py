@@ -6,6 +6,7 @@
 
 import asyncio
 import hashlib
+import heapq
 import uuid
 from typing import Any
 
@@ -19,7 +20,10 @@ from ogx.providers.inline.vector_io.qdrant import QdrantVectorIOConfig as Inline
 from ogx.providers.utils.inference.prompt_adapter import interleaved_content_as_str
 from ogx.providers.utils.memory.openai_vector_store_mixin import OpenAIVectorStoreMixin
 from ogx.providers.utils.memory.vector_store import ChunkForDeletion, EmbeddingIndex, VectorStoreWithIndex
-from ogx.providers.utils.vector_io.vector_utils import load_embedded_chunk_with_backward_compat
+from ogx.providers.utils.vector_io.vector_utils import (
+    WeightedInMemoryAggregator,
+    load_embedded_chunk_with_backward_compat,
+)
 from ogx_api import (
     ComparisonFilter,
     CompoundFilter,
@@ -244,80 +248,61 @@ class QdrantIndex(EmbeddingIndex):
         filters: ComparisonFilter | CompoundFilter | None = None,
     ) -> QueryChunksResponse:
         """
-        Hybrid search combining vector similarity and keyword filtering in a single query.
+        Hybrid search combining vector similarity and keyword search using configurable reranking.
 
-        Uses Qdrant's native capability to combine a vector query with a query_filter,
-        allowing vector similarity search to be filtered by keyword matches in one call.
+        Runs vector and keyword searches independently, then combines results
+        using the specified reranking strategy (RRF, weighted, etc.).
 
         Args:
             embedding: The query embedding vector
-            query_string: The text query for keyword filtering
+            query_string: The text query for keyword search
             k: Number of results to return
             score_threshold: Minimum similarity score threshold
-            reranker_type: Not used with this approach, but kept for API compatibility
-            reranker_params: Not used with this approach, but kept for API compatibility
+            reranker_type: Type of reranker to use ("rrf" or "weighted")
+            reranker_params: Parameters for the reranker
 
         Returns:
-            QueryChunksResponse with filtered vector search results
+            QueryChunksResponse with combined results
         """
-        # Qdrant provider does not yet support native filtering
-        if filters is not None:
-            raise NotImplementedError("Qdrant provider does not yet support native filtering")
+        if reranker_params is None:
+            reranker_params = {}
 
-        try:
-            query_words = query_string.lower().split()
-            if not query_words:
-                # If no words, just do vector search without keyword filter
-                results = (
-                    await self.client.query_points(
-                        collection_name=self.collection_name,
-                        query=embedding.tolist(),
-                        limit=k,
-                        with_payload=True,
-                        score_threshold=score_threshold,
-                    )
-                ).points
-            else:
-                # Use should to match any of the query words
-                results = (
-                    await self.client.query_points(
-                        collection_name=self.collection_name,
-                        query=embedding.tolist(),
-                        query_filter=models.Filter(
-                            should=[
-                                models.FieldCondition(key="content_text", match=models.MatchText(text=word))
-                                for word in query_words
-                            ]
-                        ),
-                        limit=k,
-                        with_payload=True,
-                        score_threshold=score_threshold,
-                    )
-                ).points
-        except Exception as e:
-            log.error(f"Error querying hybrid search in Qdrant collection {self.collection_name}: {e}")
-            raise
+        # Run both searches concurrently
+        vector_response, keyword_response = await asyncio.gather(
+            self.query_vector(embedding, k, score_threshold, filters),
+            self.query_keyword(query_string, k, score_threshold, filters),
+        )
 
-        chunks, scores = [], []
-        for point in results:
-            if not isinstance(point, models.ScoredPoint):
-                raise RuntimeError(f"Expected ScoredPoint from Qdrant query, got {type(point).__name__}")
-            if point.payload is None:
-                raise RuntimeError("Qdrant query returned point with no payload")
+        # Convert responses to score dictionaries using chunk_id
+        vector_scores = {
+            chunk.chunk_id: score for chunk, score in zip(vector_response.chunks, vector_response.scores, strict=False)
+        }
+        keyword_scores = {
+            chunk.chunk_id: score
+            for chunk, score in zip(keyword_response.chunks, keyword_response.scores, strict=False)
+        }
 
-            try:
-                chunk = load_embedded_chunk_with_backward_compat(point.payload["chunk_content"])
-            except Exception:
-                chunk_id = point.payload.get(CHUNK_ID_KEY, "unknown") if point.payload else "unknown"
-                point_id = getattr(point, "id", "unknown")
-                log.exception(
-                    f"Failed to parse chunk in collection {self.collection_name}: "
-                    f"chunk_id={chunk_id}, point_id={point_id}"
-                )
-                continue
+        # Combine scores using the reranking utility
+        combined_scores = WeightedInMemoryAggregator.combine_search_results(
+            vector_scores, keyword_scores, reranker_type, reranker_params
+        )
 
-            chunks.append(chunk)
-            scores.append(point.score)
+        # Efficient top-k selection
+        top_k_items = heapq.nlargest(k, combined_scores.items(), key=lambda x: x[1])
+
+        # Filter by score threshold
+        filtered_items = [(doc_id, score) for doc_id, score in top_k_items if score >= score_threshold]
+
+        # Create a map of chunk_id to chunk for both responses
+        chunk_map = {c.chunk_id: c for c in vector_response.chunks + keyword_response.chunks}
+
+        # Look up chunks by their IDs
+        chunks = []
+        scores = []
+        for doc_id, score in filtered_items:
+            if doc_id in chunk_map:
+                chunks.append(chunk_map[doc_id])
+                scores.append(score)
 
         return QueryChunksResponse(chunks=chunks, scores=scores)
 
