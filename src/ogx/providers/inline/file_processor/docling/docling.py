@@ -82,7 +82,7 @@ class DoclingFileProcessor:
         doc = result.document
         page_count = doc.num_pages()
 
-        document_id = str(uuid.uuid4())
+        document_id = file_id or str(uuid.uuid4())
 
         document_metadata: dict[str, Any] = {"filename": filename}
         if file_id:

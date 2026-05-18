@@ -96,7 +96,7 @@ class MarkItDownFileProcessor:
                 },
             )
 
-        document_id = str(uuid.uuid4())
+        document_id = file_id or str(uuid.uuid4())
         document_metadata: dict[str, Any] = {"filename": filename}
         if file_id:
             document_metadata["file_id"] = file_id

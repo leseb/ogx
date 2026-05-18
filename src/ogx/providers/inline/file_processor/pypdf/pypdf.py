@@ -110,7 +110,7 @@ class PyPDFFileProcessor:
         if self.config.extract_metadata:
             pdf_metadata = self._extract_pdf_metadata(reader)
 
-        document_id = str(uuid.uuid4())
+        document_id = file_id or str(uuid.uuid4())
         document_metadata: dict[str, Any] = {"filename": filename, **pdf_metadata}
         if file_id:
             document_metadata["file_id"] = file_id
@@ -152,7 +152,7 @@ class PyPDFFileProcessor:
         if self.config.clean_text:
             text_content = self._clean_text(text_content)
 
-        document_id = str(uuid.uuid4())
+        document_id = file_id or str(uuid.uuid4())
         document_metadata: dict[str, Any] = {"filename": filename}
         if file_id:
             document_metadata["file_id"] = file_id
