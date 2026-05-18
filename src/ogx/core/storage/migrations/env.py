@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, pool
 
 
 def get_url() -> str:
-    url = context.config.get_main_option("sqlalchemy.url")
+    url: str | None = context.config.get_main_option("sqlalchemy.url")
     if not url:
         raise RuntimeError("sqlalchemy.url must be set in Alembic config")
     return url

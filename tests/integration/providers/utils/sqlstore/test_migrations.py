@@ -119,22 +119,26 @@ class TestUpgradePreExistingTables:
             conn.execute(sa.text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             conn.execute(sa.text("DROP TABLE IF EXISTS conversation_items CASCADE"))
             conn.execute(sa.text("DROP TABLE IF EXISTS openai_responses CASCADE"))
-            conn.execute(sa.text("""
+            conn.execute(
+                sa.text("""
                 CREATE TABLE conversation_items (
                     id TEXT PRIMARY KEY,
                     conversation_id TEXT,
                     created_at INTEGER,
                     item_data TEXT
                 )
-            """))
-            conn.execute(sa.text("""
+            """)
+            )
+            conn.execute(
+                sa.text("""
                 CREATE TABLE openai_responses (
                     id TEXT PRIMARY KEY,
                     created_at INTEGER,
                     response_object TEXT,
                     model TEXT
                 )
-            """))
+            """)
+            )
 
         cfg = _alembic_cfg(pg_url)
         command.upgrade(cfg, "head")
@@ -181,14 +185,16 @@ class TestCustomTableNames:
         with pg_engine.begin() as conn:
             conn.execute(sa.text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             conn.execute(sa.text(f'DROP TABLE IF EXISTS "{custom_table}" CASCADE'))
-            conn.execute(sa.text(f"""
+            conn.execute(
+                sa.text(f"""
                 CREATE TABLE "{custom_table}" (
                     id TEXT PRIMARY KEY,
                     created_at INTEGER,
                     response_object TEXT,
                     model TEXT
                 )
-            """))
+            """)
+            )
 
         cfg = _alembic_cfg(pg_url, x_responses_table=custom_table)
         command.upgrade(cfg, "head")
@@ -208,18 +214,22 @@ class TestCustomTableNames:
             conn.execute(sa.text("DROP TABLE IF EXISTS alembic_version CASCADE"))
             conn.execute(sa.text("DROP TABLE IF EXISTS openai_responses CASCADE"))
             conn.execute(sa.text(f'DROP TABLE IF EXISTS "{custom_table}" CASCADE'))
-            conn.execute(sa.text("""
+            conn.execute(
+                sa.text("""
                 CREATE TABLE openai_responses (
                     id TEXT PRIMARY KEY,
                     model TEXT
                 )
-            """))
-            conn.execute(sa.text(f"""
+            """)
+            )
+            conn.execute(
+                sa.text(f"""
                 CREATE TABLE "{custom_table}" (
                     id TEXT PRIMARY KEY,
                     model TEXT
                 )
-            """))
+            """)
+            )
 
         cfg = _alembic_cfg(pg_url, x_responses_table=custom_table)
         command.upgrade(cfg, "head")

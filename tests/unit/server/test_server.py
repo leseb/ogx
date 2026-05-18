@@ -340,7 +340,10 @@ class TestStackAppInitialization:
             patch("ogx.core.server.server.Stack", FakeStack),
             patch("ogx.core.server.server._check_postgres_schema_versions", side_effect=fake_check),
             patch("ogx.core.server.server.concurrent.futures.ThreadPoolExecutor", _ImmediateExecutor),
-            patch("ogx.core.storage.sqlstore.sqlstore.reset_sqlstore_engines", side_effect=lambda: call_order.append("reset")),
+            patch(
+                "ogx.core.storage.sqlstore.sqlstore.reset_sqlstore_engines",
+                side_effect=lambda: call_order.append("reset"),
+            ),
         ):
             StackApp(config=Mock())
 
