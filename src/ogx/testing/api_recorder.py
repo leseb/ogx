@@ -1428,6 +1428,64 @@ async def _genai_record_replay(original_method, self, endpoint, mode, storage, *
     raise AssertionError(f"Invalid mode: {mode}")
 
 
+class _AsyncModelsPaginatorProxy:
+    """Proxy that preserves the AsyncPaginator contract for AsyncModels.list().
+
+    The OpenAI SDK's AsyncModels.list() returns an AsyncPaginator which supports:
+    1. __await__  -> AsyncPage[Model] (with .data attribute, iterable)
+    2. __aiter__  -> yields individual Model items
+
+    When recording/replaying, _patched_inference_method returns a plain list of
+    Model objects.  This proxy wraps that list so both contracts are satisfied.
+    """
+
+    def __init__(self, original_method, models_self, *args, **kwargs):
+        self._original_method = original_method
+        self._models_self = models_self
+        self._args = args
+        self._kwargs = kwargs
+
+    async def _resolve(self) -> list:
+        return await _patched_inference_method(
+            self._original_method,
+            self._models_self,
+            "openai",
+            "/v1/models",
+            *self._args,
+            **self._kwargs,
+        )
+
+    def __await__(self):
+        return self._await_page().__await__()
+
+    async def _await_page(self):
+        items = await self._resolve()
+        return _AsyncPageProxy(items)
+
+    async def __aiter__(self):
+        items = await self._resolve()
+        for item in items:
+            yield item
+
+
+class _AsyncPageProxy:
+    """Minimal proxy mimicking AsyncPage[Model] for recorded/replayed model lists.
+
+    Provides .data for attribute access and __iter__/__len__ for iteration,
+    matching the subset of the AsyncPage interface used by callers.
+    """
+
+    def __init__(self, items: list):
+        self.data = items
+        self.object = "list"
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+
 def patch_inference_clients():
     """Install monkey patches for OpenAI client methods, Ollama AsyncClient methods, google-genai methods, tool runtime methods, and aiohttp for rerank."""
     global _original_methods
@@ -1491,13 +1549,7 @@ def patch_inference_clients():
         )
 
     def patched_models_list(self, *args, **kwargs):
-        async def _iter():
-            for item in await _patched_inference_method(
-                _original_methods["models_list"], self, "openai", "/v1/models", *args, **kwargs
-            ):
-                yield item
-
-        return _iter()
+        return _AsyncModelsPaginatorProxy(_original_methods["models_list"], self, *args, **kwargs)
 
     async def patched_responses_create(self, *args, **kwargs):
         return await _patched_inference_method(
