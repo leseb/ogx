@@ -1,0 +1,96 @@
+---
+title: Upgrade Guide
+description: How to upgrade OGX between versions with zero data loss
+sidebar_label: Upgrade Guide
+sidebar_position: 2
+---
+
+# Upgrade Guide
+
+This guide covers upgrading OGX in-place — keeping your existing data, configuration, and PostgreSQL database intact.
+
+## Before You Begin
+
+1. **Back up your database.** Take a PostgreSQL dump before upgrading:
+   ```bash
+   pg_dump -h $POSTGRES_HOST -U $POSTGRES_USER $POSTGRES_DB > ogx_backup_$(date +%Y%m%d).sql
+   ```
+
+2. **Read the release notes** for all versions between your current and target version. Look for breaking changes, deprecated features, and required migration steps.
+
+3. **Stop the running OGX server.** Do not upgrade while the server is serving requests.
+
+## Upgrade Steps
+
+### 1. Install the new version
+
+```bash
+pip install --upgrade ogx
+# or, if installed from source:
+git pull && pip install -e .
+```
+
+### 2. Run database migrations
+
+Starting with OGX GA, schema changes are managed by Alembic. After upgrading the binary, run:
+
+```bash
+ogx db upgrade <config.yaml>
+```
+
+This applies any pending schema migrations to all PostgreSQL backends in your config. The command is idempotent — running it against an already up-to-date database is safe.
+
+If you skip this step, the server will refuse to start with an error:
+
+```text
+Database schema is behind. Run 'ogx db upgrade' before starting the server.
+```
+
+### 3. Start the server
+
+```bash
+ogx run <config.yaml>
+```
+
+The server checks the schema version on startup. If the database is at the expected revision, it starts normally. If not, it exits with a clear error message.
+
+## First-Time Migration Setup
+
+If you're upgrading from a pre-GA version of OGX that didn't use Alembic, the first `ogx db upgrade` will:
+
+1. Detect your existing tables
+2. Ensure all expected columns exist (backfilling any that were added in recent releases)
+3. Stamp the database with the baseline schema version
+
+No data is lost or modified. The migration only adds missing columns and creates the `alembic_version` tracking table.
+
+## Multi-Instance Deployments
+
+If you run multiple OGX server instances against the same PostgreSQL database:
+
+1. **Stop all instances** before upgrading
+2. Run `ogx db upgrade` **once** from any instance
+3. Start all instances with the new version
+
+Do not run `ogx db upgrade` concurrently from multiple instances. Alembic migrations are not designed for concurrent execution.
+
+## SQLite Deployments
+
+SQLite databases do not use Alembic migrations. Schema management happens at runtime via `create_table()` with `checkfirst=True`. No manual migration step is needed for SQLite.
+
+## Rollback
+
+If you need to roll back to a previous OGX version:
+
+1. Stop the server
+2. Restore your database from the backup taken before the upgrade
+3. Install the previous OGX version
+4. Start the server
+
+Alembic supports `downgrade` operations, but for production rollbacks, restoring from a database backup is safer and more predictable.
+
+## Version History
+
+| OGX Version | Migration | What Changed |
+|-------------|-----------|-------------|
+| GA (initial) | `001_baseline` | Baseline schema stamp. Ensures backfill columns (`sort_order`, `previous_response_id`, `input_storage_mode`) and access control columns (`access_attributes`, `owner_principal`) exist on all tables. |

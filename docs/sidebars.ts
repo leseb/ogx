@@ -307,6 +307,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'deploying/index',
+        'deploying/upgrade_guide',
         'deploying/kubernetes_deployment',
         'deploying/aws_eks_deployment',
       ],
