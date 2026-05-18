@@ -52,35 +52,17 @@ def validate_url_not_private(url: str) -> None:
         _raise_blocked_ip_error(hostname)
 
 
-def _resolve_and_validate(hostname: str, port: int | None) -> list[tuple[str, int]]:
-    """Resolve hostname and validate all addresses are public.
+class _SSRFSafeTransport(httpx.AsyncBaseTransport):
+    """httpx transport wrapper that validates the peer address before every request."""
 
-    Returns a list of (ip, port) tuples that passed validation.
-    """
-    try:
-        addr = ipaddress.ip_address(hostname)
-        if _is_non_public_ip(addr):
-            _raise_blocked_ip_error(hostname)
-        return [(str(addr), port or 443)]
-    except ValueError:
-        pass
+    def __init__(self, **kwargs: object) -> None:
+        self._inner = httpx.AsyncHTTPTransport(**kwargs)  # type: ignore[arg-type]
 
-    try:
-        infos = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise ValueError(f"Failed to resolve hostname: {hostname}") from exc
-
-    validated: list[tuple[str, int]] = []
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if _is_non_public_ip(addr):
-            _raise_blocked_ip_error(hostname)
-        validated.append((str(addr), int(info[4][1])))
-
-    if not validated:
-        raise ValueError(f"Failed to resolve hostname: {hostname}")
-
-    return validated
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        hostname = request.url.host
+        if hostname:
+            validate_url_not_private(str(request.url))
+        return await self._inner.handle_async_request(request)
 
 
 async def fetch_with_ssrf_protection(
@@ -88,39 +70,27 @@ async def fetch_with_ssrf_protection(
     *,
     timeout: httpx.Timeout | None = None,
 ) -> httpx.Response:
-    """Fetch a URL with SSRF protection by pinning DNS resolution.
+    """Fetch a URL with SSRF protection by validating DNS at request time.
 
-    Resolves the hostname, validates all addresses are public, then connects
-    directly to the validated IP while preserving the original Host header.
+    Resolves the hostname, validates all addresses are public, then fetches
+    using the original URL (preserving TLS/SNI). The DNS validation happens
+    inside the transport layer immediately before the connection is made,
+    minimizing the TOCTOU window.
     """
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
         raise ValueError(f"Failed to parse hostname from URL: {url}")
 
-    default_port = 443 if parsed.scheme == "https" else 80
-    port = parsed.port or default_port
-
-    validated_addrs = _resolve_and_validate(hostname, port)
-
-    pinned_ip, pinned_port = validated_addrs[0]
-    transport = httpx.AsyncHTTPTransport(
-        verify=parsed.scheme == "https",
-    )
-
     if timeout is None:
         timeout = httpx.Timeout(30.0, connect=10.0)
+
+    transport = _SSRFSafeTransport(verify=parsed.scheme == "https")
 
     async with httpx.AsyncClient(
         transport=transport,
         timeout=timeout,
     ) as client:
-        pinned_url = url.replace(f"://{hostname}", f"://{pinned_ip}", 1)
-        if parsed.port:
-            pinned_url = pinned_url.replace(f":{parsed.port}", f":{pinned_port}", 1)
-        r = await client.get(
-            pinned_url,
-            headers={"Host": hostname},
-        )
+        r = await client.get(url)
         r.raise_for_status()
         return r

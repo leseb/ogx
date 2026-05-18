@@ -116,10 +116,11 @@ class ToolGroupsRoutingTable(CommonRoutingTableImpl, ToolGroups):
     async def get_tool(self, tool_name: str) -> ToolDef:
         if tool_name in self.tool_to_toolgroup:
             toolgroup_id = self.tool_to_toolgroup[tool_name]
-            tools = self.toolgroups_to_tools[toolgroup_id]
-            for tool in tools:
-                if tool.name == tool_name:
-                    return tool
+            for cache_key, tools in self.toolgroups_to_tools.items():
+                if cache_key[0] == toolgroup_id:
+                    for tool in tools:
+                        if tool.name == tool_name:
+                            return tool
         raise ValueError(f"Tool '{tool_name}' not found")
 
     async def register_tool_group(
