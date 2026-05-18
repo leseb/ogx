@@ -228,6 +228,11 @@ class AdminImpl(Admin):
         return ListRoutesResponse(data=ret)
 
     async def health(self) -> HealthInfo:
+        if Api.inference.value in self.deps:
+            inference_router = self.deps[Api.inference.value]
+            store = getattr(inference_router, "store", None)
+            if store and getattr(store, "_write_error_count", 0) > 0:
+                return HealthInfo(status=HealthStatus.ERROR)
         return HealthInfo(status=HealthStatus.OK)
 
     async def version(self) -> VersionInfo:

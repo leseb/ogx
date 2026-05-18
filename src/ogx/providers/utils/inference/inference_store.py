@@ -120,6 +120,7 @@ class InferenceStore:
         self.sql_store = None
         self.policy = policy
         self.enable_write_queue = True
+        self._write_error_count: int = 0
 
         # Async write queue and worker control
         self._queue: asyncio.Queue[_WriteItem] | None = None
@@ -217,6 +218,7 @@ class InferenceStore:
                 with activate_request_context(item.request_context):
                     await self._write_chat_completion(item.completion, item.messages)
             except Exception as e:  # noqa: BLE001
+                self._write_error_count += 1
                 store_write_errors_total.add(1)
                 logger.error("Error writing chat completion", error=str(e))
             finally:
