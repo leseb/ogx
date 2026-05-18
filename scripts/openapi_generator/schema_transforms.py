@@ -466,10 +466,12 @@ def _convert_anyof_const_to_enum(obj: Any) -> None:
 
 
 def _fix_schema_recursive(obj: Any) -> None:
-    """Recursively fix schema issues: exclusiveMinimum and null defaults."""
+    """Recursively fix schema issues: null defaults.
+
+    Note: ``exclusiveMinimum`` is intentionally left untouched so that strict
+    lower bounds from JSON Schema are preserved in the OpenAPI output.
+    """
     if isinstance(obj, dict):
-        if "exclusiveMinimum" in obj and isinstance(obj["exclusiveMinimum"], int | float):
-            obj["minimum"] = obj.pop("exclusiveMinimum")
         if "default" in obj and obj["default"] is None:
             del obj["default"]
             obj["nullable"] = True
@@ -722,9 +724,22 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
                     elif not isinstance(operation["parameters"], list):
                         operation["parameters"] = []
 
+                    # Resolve $ref to the actual schema definition so we can
+                    # extract properties and convert them to query parameters.
+                    resolved_schema = schema
+                    if isinstance(schema, dict) and "$ref" in schema:
+                        ref_path = schema["$ref"]
+                        if ref_path.startswith("#/components/schemas/"):
+                            schema_name = ref_path.split("/")[-1]
+                            ref_def = (
+                                openapi_schema.get("components", {}).get("schemas", {}).get(schema_name)
+                            )
+                            if isinstance(ref_def, dict):
+                                resolved_schema = ref_def
+
                     # If the schema has properties, convert each to a query parameter
-                    if isinstance(schema, dict) and "properties" in schema:
-                        for param_name, param_schema in schema["properties"].items():
+                    if isinstance(resolved_schema, dict) and "properties" in resolved_schema:
+                        for param_name, param_schema in resolved_schema["properties"].items():
                             # Check if this parameter is already in the parameters list
                             existing_param = None
                             for existing in operation["parameters"]:
@@ -734,7 +749,7 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
 
                             if not existing_param:
                                 # Create a new query parameter from the requestBody property
-                                required = param_name in schema.get("required", [])
+                                required = param_name in resolved_schema.get("required", [])
                                 query_param = {
                                     "name": param_name,
                                     "in": "query",
@@ -745,10 +760,10 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
                                 if "description" in param_schema:
                                     query_param["description"] = param_schema["description"]
                                 operation["parameters"].append(query_param)
-                    elif isinstance(schema, dict):
+                    elif isinstance(resolved_schema, dict):
                         # Handle direct schema (not a model with properties)
                         # Try to infer parameter name from schema title
-                        param_name = schema.get("title", "").lower().replace(" ", "_")
+                        param_name = resolved_schema.get("title", "").lower().replace(" ", "_")
                         if param_name:
                             # Check if this parameter is already in the parameters list
                             existing_param = None
@@ -763,11 +778,11 @@ def _remove_request_bodies_from_get_endpoints(openapi_schema: dict[str, Any]) ->
                                     "name": param_name,
                                     "in": "query",
                                     "required": False,  # Default to optional for GET requests
-                                    "schema": schema,
+                                    "schema": resolved_schema,
                                 }
                                 # Add description if present
-                                if "description" in schema:
-                                    query_param["description"] = schema["description"]
+                                if "description" in resolved_schema:
+                                    query_param["description"] = resolved_schema["description"]
                                 operation["parameters"].append(query_param)
 
                 # Remove request body from GET endpoint
@@ -905,7 +920,7 @@ def _inline_component_refs(openapi_schema: dict[str, Any], components_to_inline:
 
 
 def _fix_schema_issues(openapi_schema: dict[str, Any]) -> dict[str, Any]:
-    """Fix common schema issues: exclusiveMinimum, null defaults, and add titles to unions."""
+    """Fix common schema issues: null defaults, const-to-enum conversion, and add titles to unions."""
     # Convert standalone const values to single-value enums (OpenAI style)
     _convert_standalone_const_to_enum(openapi_schema)
 

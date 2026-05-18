@@ -580,6 +580,48 @@ async def test_item_ordering_uses_sort_order_not_timestamp(service):
     assert len(timestamps) == 1, f"All timestamps should be identical, got {timestamps}"
 
 
+async def test_delete_conversation_cascades_to_items(service):
+    """Deleting a conversation must also delete all associated conversation items."""
+    conversation = await service.create_conversation(CreateConversationRequest())
+
+    items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text=f"Message {i}")],
+            id=f"msg_{'0' * 44}{i:04d}",
+            status="completed",
+        )
+        for i in range(3)
+    ]
+    await service.add_items(conversation.id, AddItemsRequest(items=items))
+
+    # Verify items exist before deletion
+    listed = await service.list_items(ListItemsRequest(conversation_id=conversation.id))
+    assert len(listed.data) == 3
+
+    # Delete the conversation
+    await service.openai_delete_conversation(DeleteConversationRequest(conversation_id=conversation.id))
+
+    # Verify no orphaned rows remain in the conversation_items table
+    raw = await service.sql_store.fetch_all(
+        table="conversation_items",
+        where={"conversation_id": conversation.id},
+    )
+    assert len(raw.data) == 0, f"Expected 0 orphaned items, found {len(raw.data)}"
+
+
+async def test_delete_conversation_with_no_items(service):
+    """Deleting a conversation that has no items should succeed without errors."""
+    conversation = await service.create_conversation(CreateConversationRequest())
+
+    deleted = await service.openai_delete_conversation(DeleteConversationRequest(conversation_id=conversation.id))
+    assert deleted.id == conversation.id
+
+    with pytest.raises(ConversationNotFoundError):
+        await service.get_conversation(GetConversationRequest(conversation_id=conversation.id))
+
+
 async def test_list_items_empty_conversation(service):
     """Listing items on empty conversation returns valid ConversationItemList with empty strings."""
     conversation = await service.create_conversation(CreateConversationRequest())

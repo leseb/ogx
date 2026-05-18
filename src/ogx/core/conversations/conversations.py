@@ -182,6 +182,7 @@ class ConversationServiceImpl(Conversations):
         if record is None:
             raise ConversationNotFoundError(request.conversation_id)
 
+        await self.sql_store.delete(table="conversation_items", where={"conversation_id": request.conversation_id})
         await self.sql_store.delete(table="openai_conversations", where={"id": request.conversation_id})
 
         logger.debug("Deleted conversation", conversation_id=request.conversation_id)
