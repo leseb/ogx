@@ -7,9 +7,10 @@
 
 from collections.abc import Iterable
 
-import aiohttp
+import httpx
 
 from ogx.log import get_logger
+from ogx.providers.utils.inference.http_client import build_network_client_kwargs
 from ogx.providers.utils.inference.openai_mixin import OpenAIMixin
 from ogx_api import (
     Model,
@@ -103,6 +104,13 @@ class NVIDIAInferenceAdapter(OpenAIMixin):
             )
         return super().construct_model_from_identifier(identifier)
 
+    def _build_httpx_client_kwargs(self) -> dict:
+        """Build httpx.AsyncClient kwargs that honour network/TLS configuration."""
+        kwargs = build_network_client_kwargs(self.config.network)
+        if not kwargs:
+            kwargs["verify"] = self.shared_ssl_context
+        return kwargs
+
     async def rerank(
         self,
         request: RerankRequest,
@@ -140,33 +148,32 @@ class NVIDIAInferenceAdapter(OpenAIMixin):
             "passages": passages,
         }
 
-        headers = {
-            "Authorization": f"Bearer {self.get_api_key()}",
-            "Content-Type": "application/json",
-        }
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        api_key = self._get_api_key_from_config_or_provider_data()
+        if api_key and api_key != "NO KEY REQUIRED":
+            headers["Authorization"] = f"Bearer {api_key}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(ranking_url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        response_text = await response.text()
-                        raise ConnectionError(
-                            f"NVIDIA rerank API request failed with status {response.status}: {response_text}"
-                        )
+            async with httpx.AsyncClient(**self._build_httpx_client_kwargs()) as client:
+                response = await client.post(ranking_url, headers=headers, json=payload)
+                if response.status_code != 200:
+                    raise ConnectionError(
+                        f"NVIDIA rerank API request failed with status {response.status_code}: {response.text}"
+                    )
 
-                    result = await response.json()
-                    rankings = result.get("rankings", [])
+                result = response.json()
+                rankings = result.get("rankings", [])
 
-                    # Convert to RerankData format
-                    rerank_data = []
-                    for ranking in rankings:
-                        rerank_data.append(RerankData(index=ranking["index"], relevance_score=ranking["logit"]))
+                # Convert to RerankData format
+                rerank_data = []
+                for ranking in rankings:
+                    rerank_data.append(RerankData(index=ranking["index"], relevance_score=ranking["logit"]))
 
-                    # Apply max_num_results limit
-                    if request.max_num_results is not None:
-                        rerank_data = rerank_data[: request.max_num_results]
+                # Apply max_num_results limit
+                if request.max_num_results is not None:
+                    rerank_data = rerank_data[: request.max_num_results]
 
-                    return RerankResponse(data=rerank_data)
+                return RerankResponse(data=rerank_data)
 
-        except aiohttp.ClientError as e:
+        except httpx.HTTPError as e:
             raise ConnectionError(f"Failed to connect to NVIDIA rerank API at {ranking_url}: {e}") from e

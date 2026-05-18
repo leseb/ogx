@@ -6,7 +6,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiohttp
+import httpx
 import pytest
 
 from ogx.providers.remote.inference.nvidia.config import NVIDIAConfig
@@ -16,20 +16,9 @@ from ogx_api import ModelType
 from ogx_api.inference import RerankRequest
 
 
-class MockResponse:
-    def __init__(self, status=200, json_data=None, text_data="OK"):
-        self.status = status
-        self._json_data = json_data or {"rankings": []}
-        self._text_data = text_data
+class MockHttpxClient:
+    """Mock httpx.AsyncClient that records post calls."""
 
-    async def json(self):
-        return self._json_data
-
-    async def text(self):
-        return self._text_data
-
-
-class MockSession:
     def __init__(self, response):
         self.response = response
         self.post_calls = []
@@ -40,20 +29,9 @@ class MockSession:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return False
 
-    def post(self, url, **kwargs):
+    async def post(self, url, **kwargs):
         self.post_calls.append((url, kwargs))
-
-        class PostContext:
-            def __init__(self, response):
-                self.response = response
-
-            async def __aenter__(self):
-                return self.response
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return False
-
-        return PostContext(self.response)
+        return self.response
 
 
 def create_adapter(config=None, rerank_endpoints=None):
@@ -68,6 +46,8 @@ def create_adapter(config=None, rerank_endpoints=None):
 
     adapter.model_store = AsyncMock()
     adapter.model_store.get_model = AsyncMock(return_value=MockModel())
+    adapter.__provider_id__ = "nvidia"
+    adapter.__provider_spec__ = MagicMock()
 
     if rerank_endpoints is not None:
         adapter.config.rerank_model_to_url = rerank_endpoints
@@ -77,10 +57,10 @@ def create_adapter(config=None, rerank_endpoints=None):
 
 async def test_rerank_basic_functionality():
     adapter = create_adapter()
-    mock_response = MockResponse(json_data={"rankings": [{"index": 0, "logit": 0.5}]})
-    mock_session = MockSession(mock_response)
+    mock_response = httpx.Response(200, json={"rankings": [{"index": 0, "logit": 0.5}]})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="test query", items=["item1", "item2"])
         result = await adapter.rerank(request)
 
@@ -88,7 +68,7 @@ async def test_rerank_basic_functionality():
     assert result.data[0].index == 0
     assert result.data[0].relevance_score == 0.5
 
-    url, kwargs = mock_session.post_calls[0]
+    url, kwargs = mock_client.post_calls[0]
     payload = kwargs["json"]
     assert payload["model"] == "test-model"
     assert payload["query"] == {"text": "test query"}
@@ -97,9 +77,10 @@ async def test_rerank_basic_functionality():
 
 async def test_missing_rankings_key():
     adapter = create_adapter()
-    mock_session = MockSession(MockResponse(json_data={}))
+    mock_response = httpx.Response(200, json={})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a"])
         result = await adapter.rerank(request)
 
@@ -110,13 +91,14 @@ async def test_hosted_with_endpoint():
     adapter = create_adapter(
         config=NVIDIAConfig(api_key="key"), rerank_endpoints={"test-model": "https://model.endpoint/rerank"}
     )
-    mock_session = MockSession(MockResponse())
+    mock_response = httpx.Response(200, json={"rankings": []})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a"])
         await adapter.rerank(request)
 
-    url, _ = mock_session.post_calls[0]
+    url, _ = mock_client.post_calls[0]
     assert url == "https://model.endpoint/rerank"
 
 
@@ -125,13 +107,14 @@ async def test_hosted_without_endpoint():
         config=NVIDIAConfig(api_key="key"),  # This creates hosted config (integrate.api.nvidia.com).
         rerank_endpoints={},  # No endpoint mapping for test-model
     )
-    mock_session = MockSession(MockResponse())
+    mock_response = httpx.Response(200, json={"rankings": []})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a"])
         await adapter.rerank(request)
 
-    url, _ = mock_session.post_calls[0]
+    url, _ = mock_client.post_calls[0]
     assert "https://integrate.api.nvidia.com" in url
 
 
@@ -139,13 +122,14 @@ async def test_hosted_model_not_in_endpoint_mapping():
     adapter = create_adapter(
         config=NVIDIAConfig(api_key="key"), rerank_endpoints={"other-model": "https://other.endpoint/rerank"}
     )
-    mock_session = MockSession(MockResponse())
+    mock_response = httpx.Response(200, json={"rankings": []})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a"])
         await adapter.rerank(request)
 
-    url, _ = mock_session.post_calls[0]
+    url, _ = mock_client.post_calls[0]
     assert "https://integrate.api.nvidia.com" in url
     assert url != "https://other.endpoint/rerank"
 
@@ -155,13 +139,14 @@ async def test_self_hosted_ignores_endpoint():
         config=NVIDIAConfig(base_url="http://localhost:8000", api_key=None),
         rerank_endpoints={"test-model": "https://model.endpoint/rerank"},  # This should be ignored for self-hosted.
     )
-    mock_session = MockSession(MockResponse())
+    mock_response = httpx.Response(200, json={"rankings": []})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a"])
         await adapter.rerank(request)
 
-    url, _ = mock_session.post_calls[0]
+    url, _ = mock_client.post_calls[0]
     assert "http://localhost:8000" in url
     assert "model.endpoint/rerank" not in url
 
@@ -169,9 +154,10 @@ async def test_self_hosted_ignores_endpoint():
 async def test_max_num_results():
     adapter = create_adapter()
     rankings = [{"index": 0, "logit": 0.8}, {"index": 1, "logit": 0.6}]
-    mock_session = MockSession(MockResponse(json_data={"rankings": rankings}))
+    mock_response = httpx.Response(200, json={"rankings": rankings})
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         request = RerankRequest(model="test-model", query="q", items=["a", "b"], max_num_results=1)
         result = await adapter.rerank(request)
 
@@ -182,9 +168,10 @@ async def test_max_num_results():
 
 async def test_http_error():
     adapter = create_adapter()
-    mock_session = MockSession(MockResponse(status=500, text_data="Server Error"))
+    mock_response = httpx.Response(500, text="Server Error")
+    mock_client = MockHttpxClient(mock_response)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(ConnectionError, match="status 500.*Server Error"):
             request = RerankRequest(model="test-model", query="q", items=["a"])
             await adapter.rerank(request)
@@ -192,10 +179,14 @@ async def test_http_error():
 
 async def test_client_error():
     adapter = create_adapter()
-    mock_session = AsyncMock()
-    mock_session.__aenter__.side_effect = aiohttp.ClientError("Network error")
+    mock_client = MockHttpxClient(None)
 
-    with patch("aiohttp.ClientSession", return_value=mock_session):
+    async def raise_http_error(*args, **kwargs):
+        raise httpx.ConnectError("Network error")
+
+    mock_client.post = raise_http_error
+
+    with patch("ogx.providers.remote.inference.nvidia.nvidia.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(ConnectionError, match="Failed to connect.*Network error"):
             request = RerankRequest(model="test-model", query="q", items=["a"])
             await adapter.rerank(request)
