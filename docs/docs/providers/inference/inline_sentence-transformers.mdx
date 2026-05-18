@@ -14,10 +14,10 @@ Sentence Transformers inference provider for text embeddings and similarity sear
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `trust_remote_code` | `bool` | No | False | Whether to trust and execute remote code from model repositories. Set to True for models that require custom code (e.g., nomic-ai/nomic-embed-text-v1.5). Defaults to False for security. |
+| `trust_remote_code` | `bool` | No | True | Whether to trust and execute remote code from model repositories. Required for the default model (nomic-ai/nomic-embed-text-v1.5). Set to False only when using models that do not require custom code. |
 
 ## Sample Configuration
 
 ```yaml
-trust_remote_code: false
+trust_remote_code: true
 ```
