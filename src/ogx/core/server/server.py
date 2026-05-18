@@ -30,6 +30,7 @@ from ogx.core.datatypes import (
     AuthenticationRequiredError,
     StackConfig,
 )
+from ogx.core.storage.migrations import EXPECTED_HEAD
 from ogx.core.distribution import builtin_automatically_routed_apis
 from ogx.core.exceptions import translate_exception
 from ogx.core.external import load_external_apis
@@ -128,6 +129,78 @@ class StackApp(FastAPI):
         reset_sqlstore_engines()
 
 
+async def _check_postgres_schema_versions(config: StackConfig) -> None:
+    """Check that all PostgreSQL backends are at the expected schema revision."""
+    from ogx.core.storage.datatypes import PostgresSqlStoreConfig
+
+    for backend_name, backend_config in config.storage.backends.items():
+        if not isinstance(backend_config, PostgresSqlStoreConfig):
+            continue
+
+        import asyncpg
+
+        dsn = backend_config.engine_str
+        pg_dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
+
+        try:
+            conn = await asyncpg.connect(pg_dsn)
+        except Exception:
+            logger.warning(
+                "Could not connect to PostgreSQL for schema check, skipping",
+                backend=backend_name,
+            )
+            continue
+
+        try:
+            has_version_table = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version')"
+            )
+
+            if not has_version_table:
+                has_any_tables = await conn.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = ANY($1::text[]))",
+                    ["prompts", "openai_conversations", "connectors"],
+                )
+                if has_any_tables:
+                    logger.error(
+                        "Database has existing tables but no alembic_version table. "
+                        "Run 'ogx db upgrade' to initialize schema tracking.",
+                        backend=backend_name,
+                    )
+                    raise SystemExit(1)
+                return
+
+            current_rev = await conn.fetchval("SELECT version_num FROM alembic_version")
+
+            if current_rev is None:
+                logger.error(
+                    "alembic_version table exists but is empty. "
+                    "Run 'ogx db upgrade' to apply migrations.",
+                    backend=backend_name,
+                )
+                raise SystemExit(1)
+
+            if current_rev != EXPECTED_HEAD:
+                if current_rev > EXPECTED_HEAD:
+                    logger.warning(
+                        "Database schema is newer than this server version",
+                        backend=backend_name,
+                        current=current_rev,
+                        expected=EXPECTED_HEAD,
+                    )
+                else:
+                    logger.error(
+                        "Database schema is behind. Run 'ogx db upgrade' before starting the server.",
+                        backend=backend_name,
+                        current=current_rev,
+                        expected=EXPECTED_HEAD,
+                    )
+                    raise SystemExit(1)
+        finally:
+            await conn.close()
+
+
 @asynccontextmanager
 async def lifespan(app: StackApp) -> AsyncIterator[None]:
     """FastAPI lifespan context manager that starts background tasks and handles shutdown.
@@ -139,6 +212,9 @@ async def lifespan(app: StackApp) -> AsyncIterator[None]:
 
     logger.info("Starting up OGX server", version=server_version)
     assert app.stack is not None
+
+    await _check_postgres_schema_versions(app.stack.config)
+
     app.stack.create_registry_refresh_task()  # type: ignore[no-untyped-call]
     yield
     logger.info("Shutting down")
