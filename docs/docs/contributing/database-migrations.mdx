@@ -1,0 +1,99 @@
+# Database Migrations
+
+## Overview
+
+OGX uses Alembic to manage PostgreSQL schema migrations for stable tables (prompts, conversations, connectors, inference store, responses, batches, interactions, files, vector store metadata). SQLite uses runtime schema creation via `create_table()` and is not covered by Alembic.
+
+Schema definitions live in `src/ogx/core/storage/schema.py`. This is the single source of truth. Both `create_table()` calls (all backends) and Alembic migrations (PostgreSQL) reference it.
+
+## Running Migrations
+
+```bash
+# Apply all pending migrations
+ogx db upgrade <config.yaml>
+
+# Check current schema revision
+ogx db current <config.yaml>
+
+# Show migration history
+ogx db history
+```
+
+The server refuses to start if the database schema is behind the expected revision. Always run `ogx db upgrade` before restarting the server after an OGX version upgrade.
+
+## Writing a New Migration
+
+When you need to change the schema of a stable table:
+
+1. **Update the schema** in `src/ogx/core/storage/schema.py`.
+
+2. **Create a migration revision:**
+   ```bash
+   cd src/ogx/core/storage/migrations
+   alembic revision -m "add foo column to prompts"
+   ```
+
+3. **Write the migration** in the generated file. Use `op.add_column()`, `op.drop_column()`, etc.
+
+4. **Handle configurable table names.** If your migration touches a table with a configurable name (inference_store, responses, batches, interactions, files), read the actual name from context:
+   ```python
+   responses_table = context.get_x_argument("responses_table", "openai_responses")
+   op.add_column(responses_table, sa.Column("foo", sa.String()))
+   ```
+
+5. **Test the migration:**
+   ```bash
+   # Against a fresh database
+   ogx db upgrade <config.yaml>
+
+   # Against a database at the previous revision
+   ogx db upgrade <config.yaml>  # with a DB that has the old schema
+   ```
+
+6. **Update `EXPECTED_HEAD`** in `src/ogx/core/storage/migrations/__init__.py`.
+
+## Rules
+
+- Never modify an existing migration that has been released. Create a new revision instead.
+- PostgreSQL DDL is transactional. If a migration fails, it rolls back cleanly.
+- Keep migrations small and focused. One schema change per revision.
+- Data migrations (backfilling values, transforming data) go in separate revisions from DDL changes.
+- Do not use `--autogenerate`. Write migrations by hand.
+- Always update `schema.py` alongside the migration. The schema file and migrations must stay in sync.
+
+## Architecture
+
+```
+ogx db upgrade <config.yaml>
+       |
+       v
+  Load config (same path as ogx run)
+       |
+       v
+  Discover all PostgreSQL backends from storage.backends
+       |
+       v
+  For each unique PostgreSQL DSN:
+    Run Alembic upgrade head (each migration in a transaction)
+       |
+       v
+  Print status per backend
+
+
+ogx run <config.yaml>
+       |
+       v
+  lifespan() starts (async context):
+    For each PostgreSQL backend:
+      Check alembic_version against EXPECTED_HEAD
+      If behind: FATAL error, exit
+      If current: continue
+       |
+       v
+  Stack.initialize() runs:
+    Services call create_table() as normal
+    (idempotent on PostgreSQL — tables already exist from migration)
+       |
+       v
+  Server ready
+```
