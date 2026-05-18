@@ -320,6 +320,7 @@ const sidebars: SidebarsConfig = {
         'contributing/index',
         'contributing/new_api_provider',
         'contributing/new_vector_database',
+        'contributing/database-migrations',
         'contributing/testing/record-replay',
       ],
     },
@@ -331,6 +332,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'references/index',
         'references/ogx_cli_reference/index',
+        'references/ogx_cli_reference/db',
         'references/ogx_client_cli_reference',
         'references/python_sdk_reference/index',
       ],
