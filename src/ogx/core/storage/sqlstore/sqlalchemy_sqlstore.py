@@ -303,8 +303,8 @@ class SqlAlchemySqlStoreImpl(SqlStore):
                 # where < or > depends on the sort direction of each column.
                 cursor_clauses: list[ColumnElement[bool]] = []
                 for i in range(len(order_by)):
-                    col_name, direction = order_by[i]
-                    col = table_obj.c[col_name]
+                    ob_col_name, direction = order_by[i]
+                    ob_col = table_obj.c[ob_col_name]
                     val = cursor_row[i]
 
                     # All preceding columns must be equal
@@ -312,9 +312,9 @@ class SqlAlchemySqlStoreImpl(SqlStore):
 
                     # The i-th column uses a strict inequality
                     if direction == "desc":
-                        inequality = col < val
+                        inequality = ob_col < val
                     else:
-                        inequality = col > val
+                        inequality = ob_col > val
 
                     if equality_conditions:
                         cursor_clauses.append(and_(*equality_conditions, inequality))
