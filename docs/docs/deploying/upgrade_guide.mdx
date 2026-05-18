@@ -25,20 +25,18 @@ This guide covers upgrading OGX in-place — keeping your existing data, configu
 ### 1. Install the new version
 
 ```bash
-pip install --upgrade ogx
-# or, if installed from source:
-git pull && pip install -e .
+uv pip install --upgrade ogx
 ```
 
 ### 2. Run database migrations
 
-Starting with OGX GA, schema changes are managed by Alembic. After upgrading the binary, run:
+Starting with OGX v1.1, schema changes are managed by Alembic. After upgrading the binary, run:
 
 ```bash
 ogx db upgrade <config.yaml>
 ```
 
-This applies any pending schema migrations to all PostgreSQL backends in your config. The command is idempotent — running it against an already up-to-date database is safe.
+The OGX server must be stopped before running migrations. This command applies any pending schema migrations to all PostgreSQL backends in your config. It is idempotent — running it against an already up-to-date database is safe.
 
 If you skip this step, the server will refuse to start with an error:
 
@@ -56,7 +54,7 @@ The server checks the schema version on startup. If the database is at the expec
 
 ## First-Time Migration Setup
 
-If you're upgrading from a pre-GA version of OGX that didn't use Alembic, the first `ogx db upgrade` will:
+If you're upgrading from a version prior to v1.1 that didn't use Alembic, the first `ogx db upgrade` will:
 
 1. Detect your existing tables
 2. Ensure all expected columns exist (backfilling any that were added in recent releases)
@@ -93,4 +91,4 @@ Alembic supports `downgrade` operations, but for production rollbacks, restoring
 
 | OGX Version | Migration | What Changed |
 |-------------|-----------|-------------|
-| GA (initial) | `001_baseline` | Baseline schema stamp. Ensures backfill columns (`sort_order`, `previous_response_id`, `input_storage_mode`) and access control columns (`access_attributes`, `owner_principal`) exist on all tables. |
+| v1.1 | `001_baseline` | Baseline schema stamp. Ensures backfill columns (`sort_order`, `previous_response_id`, `input_storage_mode`) and access control columns (`access_attributes`, `owner_principal`) exist on all tables. |
