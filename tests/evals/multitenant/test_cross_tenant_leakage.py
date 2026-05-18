@@ -26,10 +26,11 @@ Run::
 
 import pytest
 
+from ogx_api import ComparisonFilter
+
 from .conftest import (
     QUERY_EMBEDDINGS,
     TOPICS,
-    matches_filters,
 )
 
 # Number of results to retrieve per query
@@ -115,37 +116,36 @@ class TestUngatedRetrieval:
 
 
 class TestChunkLevelGatedRetrieval:
-    """Retrieval with metadata filter on tenant_id: blocks cross-tenant leakage."""
+    """Retrieval with metadata filter on tenant_id pushed into the query engine."""
 
     @pytest.mark.parametrize("topic", TOPICS)
     async def test_gated_retrieval_blocks_cross_tenant_data(self, shared_vector_index, topic):
-        """With a tenant_id metadata filter, zero cross-tenant chunks are returned."""
+        """With a tenant_id metadata filter passed to query_vector, zero
+        cross-tenant chunks are returned by the vector store itself."""
         query_emb = QUERY_EMBEDDINGS[topic]
-        result = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
+        result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
+        )
 
-        # Apply chunk-level metadata filter (simulating what file_search does)
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
-        filtered = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-
-        leakage = _leakage_rate(filtered, "tenant-a")
+        leakage = _leakage_rate(result.chunks, "tenant-a")
         assert leakage == 0.0, (
-            f"Topic '{topic}': expected 0% leakage with tenant filter, "
-            f"got {leakage:.2%}. Details: {_leakage_details(filtered, 'tenant-a')}"
+            f"Topic '{topic}': expected 0% leakage with server-side tenant filter, "
+            f"got {leakage:.2%}. Details: {_leakage_details(result.chunks, 'tenant-a')}"
         )
 
     async def test_gated_aggregate_leakage_rate(self, shared_vector_index):
-        """Aggregate leakage rate with chunk-level gating is exactly zero."""
+        """Aggregate leakage rate with server-side gating is exactly zero."""
         total_chunks = 0
         leaked_chunks = 0
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
 
         for topic in TOPICS:
             query_emb = QUERY_EMBEDDINGS[topic]
             result = await shared_vector_index.query_vector(
-                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
+                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
             )
-            filtered = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-            for c in filtered:
+            for c in result.chunks:
                 total_chunks += 1
                 if c.metadata.get("tenant_id") != "tenant-a":
                     leaked_chunks += 1
@@ -160,16 +160,15 @@ class TestChunkLevelGatedRetrieval:
         ids=["tenant_a_queries", "tenant_b_queries"],
     )
     async def test_gated_retrieval_symmetric(self, shared_vector_index, querying_tenant):
-        """Gating works symmetrically for both tenants."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": querying_tenant}
+        """Gating works symmetrically for both tenants via server-side filtering."""
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value=querying_tenant)
 
         for topic in TOPICS:
             query_emb = QUERY_EMBEDDINGS[topic]
             result = await shared_vector_index.query_vector(
-                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
+                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
             )
-            filtered = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-            leakage = _leakage_rate(filtered, querying_tenant)
+            leakage = _leakage_rate(result.chunks, querying_tenant)
             assert leakage == 0.0
 
 
@@ -222,10 +221,10 @@ class TestLeakageComparison:
 
     async def test_leakage_comparison_table(self, shared_vector_index, tenant_a_vector_index):
         """Produces a comparison table suitable for the paper's evaluation section."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
         results = {}
 
-        for config_name, index, apply_filter in [
+        for config_name, index, use_filter in [
             ("ungated", shared_vector_index, False),
             ("chunk_gated", shared_vector_index, True),
             ("per_tenant", tenant_a_vector_index, False),
@@ -234,11 +233,13 @@ class TestLeakageComparison:
             leaked = 0
             for topic in TOPICS:
                 query_emb = QUERY_EMBEDDINGS[topic]
-                result = await index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
-                chunks = result.chunks
-                if apply_filter:
-                    chunks = [c for c in chunks if matches_filters(c.metadata, tenant_filter)]
-                for c in chunks:
+                result = await index.query_vector(
+                    embedding=query_emb,
+                    k=TOP_K,
+                    score_threshold=SCORE_THRESHOLD,
+                    filters=tenant_filter if use_filter else None,
+                )
+                for c in result.chunks:
                     total += 1
                     if c.metadata.get("tenant_id") != "tenant-a":
                         leaked += 1

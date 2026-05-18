@@ -590,3 +590,38 @@ async def test_list_items_empty_conversation(service):
     assert result.has_more is False
     assert result.first_id == ""
     assert result.last_id == ""
+
+
+async def test_delete_conversation_cascades_to_items(service):
+    """Deleting a conversation must remove all its items (no orphaned rows)."""
+    conversation = await service.create_conversation(CreateConversationRequest())
+
+    items = [
+        OpenAIResponseMessage(
+            type="message",
+            role="user",
+            content=[OpenAIResponseInputMessageContentText(type="input_text", text=f"Msg {i}")],
+            id=f"msg_{'0' * 44}{i:04d}",
+            status="completed",
+        )
+        for i in range(3)
+    ]
+    await service.add_items(conversation.id, AddItemsRequest(items=items))
+
+    listed = await service.list_items(ListItemsRequest(conversation_id=conversation.id))
+    assert len(listed.data) == 3
+
+    await service.openai_delete_conversation(DeleteConversationRequest(conversation_id=conversation.id))
+
+    with pytest.raises(ConversationNotFoundError):
+        await service.get_conversation(GetConversationRequest(conversation_id=conversation.id))
+
+    for item in items:
+        with pytest.raises(ConversationItemNotFoundError):
+            await service.retrieve(RetrieveItemRequest(conversation_id=conversation.id, item_id=item.id))
+
+    raw = await service.sql_store.fetch_all(
+        table="conversation_items",
+        where={"conversation_id": conversation.id},
+    )
+    assert len(raw.data) == 0

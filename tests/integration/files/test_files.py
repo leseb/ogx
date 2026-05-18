@@ -4,11 +4,14 @@
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
 
+import json
+import os
 from io import BytesIO
 from unittest.mock import patch
 
 import pytest
 import requests
+from openai import OpenAI
 
 from ogx.core.datatypes import User
 from ogx_api import OpenAIFilePurpose
@@ -174,105 +177,110 @@ def test_expires_after_requests(openai_client):
                 pass
 
 
-@pytest.mark.xfail(message="User isolation broken for current providers, must be fixed.")
-@patch("ogx.core.storage.sqlstore.authorized_sqlstore.get_authenticated_user")
-def test_files_authentication_isolation(mock_get_authenticated_user, ogx_client):
-    """Test that users can only access their own files."""
-    from ogx_client import NotFoundError
+def _files_auth_enabled() -> bool:
+    return bool(os.environ.get("ALICE_TOKEN") or os.environ.get("BOB_TOKEN"))
 
-    client = ogx_client
 
-    # Create two test users
-    user1 = User("user1", {"roles": ["user"], "teams": ["team-a"]})
-    user2 = User("user2", {"roles": ["user"], "teams": ["team-b"]})
+@pytest.mark.integration
+@pytest.mark.skipif(not _files_auth_enabled(), reason="Auth tokens not configured (set ALICE_TOKEN and BOB_TOKEN)")
+class TestFilesAuthenticationIsolation:
+    """Test user isolation for the files API using real HTTP auth tokens.
 
-    # User 1 uploads a file
-    mock_get_authenticated_user.return_value = user1
-    test_content_1 = b"User 1's private file content"
+    Requires ALICE_TOKEN and BOB_TOKEN environment variables with valid
+    auth tokens for two users with non-overlapping attributes.
+    """
 
-    with BytesIO(test_content_1) as file_buffer:
-        file_buffer.name = "user1_file.txt"
-        user1_file = client.files.create(file=file_buffer, purpose=purpose)
+    @pytest.fixture
+    def alice_client(self, openai_client, request):
+        token = os.environ.get("ALICE_TOKEN", "token-alice")
+        default_headers = {
+            "X-OGX-Provider-Data": json.dumps({"__test_id": request.node.nodeid}),
+        }
+        return OpenAI(
+            base_url=str(openai_client.base_url),
+            api_key=token,
+            default_headers=default_headers,
+            max_retries=0,
+            timeout=60.0,
+        )
 
-    # User 2 uploads a file
-    mock_get_authenticated_user.return_value = user2
-    test_content_2 = b"User 2's private file content"
+    @pytest.fixture
+    def bob_client(self, openai_client, request):
+        token = os.environ.get("BOB_TOKEN", "token-bob")
+        default_headers = {
+            "X-OGX-Provider-Data": json.dumps({"__test_id": request.node.nodeid}),
+        }
+        return OpenAI(
+            base_url=str(openai_client.base_url),
+            api_key=token,
+            default_headers=default_headers,
+            max_retries=0,
+            timeout=60.0,
+        )
 
-    with BytesIO(test_content_2) as file_buffer:
-        file_buffer.name = "user2_file.txt"
-        user2_file = client.files.create(file=file_buffer, purpose=purpose)
+    def test_user_cannot_list_other_users_files(self, alice_client, bob_client):
+        """Alice's files should not appear in Bob's file listing."""
+        test_content = b"Alice's private file content"
 
-    try:
-        # User 1 can see their own file
-        mock_get_authenticated_user.return_value = user1
-        user1_files = client.files.list()
-        user1_file_ids = [f.id for f in user1_files.data]
-        assert user1_file.id in user1_file_ids
-        assert user2_file.id not in user1_file_ids  # Cannot see user2's file
+        with BytesIO(test_content) as file_buffer:
+            file_buffer.name = "alice_file.txt"
+            alice_file = alice_client.files.create(file=file_buffer, purpose=purpose)
 
-        # User 2 can see their own file
-        mock_get_authenticated_user.return_value = user2
-        user2_files = client.files.list()
-        user2_file_ids = [f.id for f in user2_files.data]
-        assert user2_file.id in user2_file_ids
-        assert user1_file.id not in user2_file_ids  # Cannot see user1's file
-
-        # User 1 can retrieve their own file
-        mock_get_authenticated_user.return_value = user1
-        retrieved_file = client.files.retrieve(user1_file.id)
-        assert retrieved_file.id == user1_file.id
-
-        # User 1 cannot retrieve user2's file
-        mock_get_authenticated_user.return_value = user1
-        with pytest.raises(NotFoundError, match="not found"):
-            client.files.retrieve(user2_file.id)
-
-        # User 1 can access their file content
-        mock_get_authenticated_user.return_value = user1
-        content_response = client.files.content(user1_file.id)
-        if isinstance(content_response, str):
-            content = bytes(content_response, "utf-8")
-        else:
-            content = content_response.content
-        assert content == test_content_1
-
-        # User 1 cannot access user2's file content
-        mock_get_authenticated_user.return_value = user1
-        with pytest.raises(NotFoundError, match="not found"):
-            client.files.content(user2_file.id)
-
-        # User 1 can delete their own file
-        mock_get_authenticated_user.return_value = user1
-        delete_response = client.files.delete(user1_file.id)
-        assert delete_response.deleted is True
-
-        # User 1 cannot delete user2's file
-        mock_get_authenticated_user.return_value = user1
-        with pytest.raises(NotFoundError, match="not found"):
-            client.files.delete(user2_file.id)
-
-        # User 2 can still access their file after user1's file is deleted
-        mock_get_authenticated_user.return_value = user2
-        retrieved_file = client.files.retrieve(user2_file.id)
-        assert retrieved_file.id == user2_file.id
-
-        # Cleanup user2's file
-        mock_get_authenticated_user.return_value = user2
-        client.files.delete(user2_file.id)
-
-    except Exception as e:
-        # Cleanup in case of failure
         try:
-            mock_get_authenticated_user.return_value = user1
-            client.files.delete(user1_file.id)
-        except Exception:
-            pass
+            alice_files = alice_client.files.list()
+            alice_file_ids = [f.id for f in alice_files.data]
+            assert alice_file.id in alice_file_ids
+
+            bob_files = bob_client.files.list()
+            bob_file_ids = [f.id for f in bob_files.data]
+            assert alice_file.id not in bob_file_ids
+        finally:
+            try:
+                alice_client.files.delete(alice_file.id)
+            except Exception:
+                pass
+
+    def test_user_cannot_retrieve_other_users_file(self, alice_client, bob_client):
+        """Bob should get an error when retrieving Alice's file."""
+        test_content = b"Alice's private file content"
+
+        with BytesIO(test_content) as file_buffer:
+            file_buffer.name = "alice_file.txt"
+            alice_file = alice_client.files.create(file=file_buffer, purpose=purpose)
+
         try:
-            mock_get_authenticated_user.return_value = user2
-            client.files.delete(user2_file.id)
-        except Exception:
-            pass
-        raise e
+            retrieved = alice_client.files.retrieve(alice_file.id)
+            assert retrieved.id == alice_file.id
+
+            with pytest.raises(Exception) as exc_info:
+                bob_client.files.retrieve(alice_file.id)
+            assert exc_info.value.status_code in (400, 403, 404)
+        finally:
+            try:
+                alice_client.files.delete(alice_file.id)
+            except Exception:
+                pass
+
+    def test_user_cannot_delete_other_users_file(self, alice_client, bob_client):
+        """Bob should not be able to delete Alice's file."""
+        test_content = b"Alice's private file content"
+
+        with BytesIO(test_content) as file_buffer:
+            file_buffer.name = "alice_file.txt"
+            alice_file = alice_client.files.create(file=file_buffer, purpose=purpose)
+
+        try:
+            with pytest.raises(Exception) as exc_info:
+                bob_client.files.delete(alice_file.id)
+            assert exc_info.value.status_code in (400, 403, 404)
+
+            retrieved = alice_client.files.retrieve(alice_file.id)
+            assert retrieved.id == alice_file.id
+        finally:
+            try:
+                alice_client.files.delete(alice_file.id)
+            except Exception:
+                pass
 
 
 @patch("ogx.core.storage.sqlstore.authorized_sqlstore.get_authenticated_user")

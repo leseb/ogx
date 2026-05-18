@@ -86,8 +86,8 @@ class BatchHelper:
             The final batch object
 
         Raises:
-            pytest.Failed: If batch reaches an unexpected status or timeout_action is "fail"
-            pytest.Skipped: If timeout_action is "skip" on timeout or unexpected status
+            pytest.Failed: If batch reaches an unexpected terminal status (always fails)
+            pytest.Skipped: If timeout_action is "skip" and the wait times out
         """
         if expected_statuses is None:
             expected_statuses = {"completed"}
@@ -111,11 +111,7 @@ class BatchHelper:
             if current_batch.status in expected_statuses:
                 return current_batch
             elif current_batch.status in unexpected_statuses:
-                error_msg = f"Batch reached unexpected status: {current_batch.status}"
-                if timeout_action == "skip":
-                    pytest.skip(error_msg)
-                else:
-                    pytest.fail(error_msg)
+                pytest.fail(f"Batch reached unexpected status: {current_batch.status}")
 
             time.sleep(current_interval)
 

@@ -25,6 +25,8 @@ Run::
     uv run pytest tests/evals/multitenant/test_adversarial_scenarios.py -v
 """
 
+from ogx_api import ComparisonFilter, CompoundFilter
+
 from .conftest import (
     QUERY_EMBEDDINGS,
     TOPICS,
@@ -69,14 +71,14 @@ class TestTargetedConfidentialExtraction:
         assert "confidential" in tenant_b_topics
 
     async def test_targeted_query_with_gating_blocks_confidential(self, shared_vector_index):
-        """With gating, the same query returns only tenant-a's data."""
+        """With server-side gating, the same query returns only tenant-a's data."""
         query_emb = QUERY_EMBEDDINGS["confidential"]
-        result = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
+        result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
+        )
 
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
-        filtered = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-
-        for c in filtered:
+        for c in result.chunks:
             assert c.metadata.get("tenant_id") == "tenant-a", (
                 f"Gated confidential query returned unauthorized chunk: "
                 f"tenant={c.metadata.get('tenant_id')}, topic={c.metadata.get('topic')}"
@@ -102,29 +104,26 @@ class TestMetadataFilterTampering:
         assert len(tenant_counts) > 1, "Empty filter should return all tenants"
 
     async def test_wrong_tenant_filter_returns_nothing_for_attacker(self, shared_vector_index):
-        """If the server enforces the correct tenant_id filter, an attacker cannot
-        substitute a different tenant_id to access another tenant's data."""
+        """Server-side filtering with tenant-a's filter returns only tenant-a data,
+        while an attacker-supplied tenant-b filter returns only tenant-b data.
+        In production, the server must enforce the authenticated tenant_id and
+        ignore client-provided filters."""
         query_emb = QUERY_EMBEDDINGS["revenue"]
-        result = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
 
-        # Server enforces tenant-a's filter (correct behavior)
-        server_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
-        server_filtered = [c for c in result.chunks if matches_filters(c.metadata, server_filter)]
+        server_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
+        server_result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=server_filter
+        )
 
-        # All results must be tenant-a
-        for c in server_filtered:
+        for c in server_result.chunks:
             assert c.metadata.get("tenant_id") == "tenant-a"
 
-        # Attacker tries to substitute tenant-b's filter
-        # In a properly secured system, the server ignores client-provided
-        # tenant_id and uses the authenticated user's identity instead
-        attacker_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-b"}
-        attacker_filtered = [c for c in result.chunks if matches_filters(c.metadata, attacker_filter)]
+        attacker_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-b")
+        attacker_result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=attacker_filter
+        )
 
-        # The attacker's filter would return tenant-b data IF the server
-        # accepted client-provided filters. This demonstrates why the server
-        # must enforce tenant_id from the auth context, not from the request.
-        for c in attacker_filtered:
+        for c in attacker_result.chunks:
             assert c.metadata.get("tenant_id") == "tenant-b"
 
 
@@ -140,27 +139,26 @@ class TestCompoundFilterBypass:
         """An OR filter combining both tenants would bypass isolation.
         The server must reject or override client-provided compound filters."""
         query_emb = QUERY_EMBEDDINGS["strategy"]
-        result = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
 
-        # Legitimate filter (server-enforced)
-        legitimate_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
-        legitimate_results = [c for c in result.chunks if matches_filters(c.metadata, legitimate_filter)]
+        legitimate_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
+        legitimate_result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=legitimate_filter
+        )
 
-        # Attacker attempts OR filter to include both tenants
-        bypass_filter = {
-            "type": "or",
-            "filters": [
-                {"type": "eq", "key": "tenant_id", "value": "tenant-a"},
-                {"type": "eq", "key": "tenant_id", "value": "tenant-b"},
+        bypass_filter = CompoundFilter(
+            type="or",
+            filters=[
+                ComparisonFilter(type="eq", key="tenant_id", value="tenant-a"),
+                ComparisonFilter(type="eq", key="tenant_id", value="tenant-b"),
             ],
-        }
-        bypass_results = [c for c in result.chunks if matches_filters(c.metadata, bypass_filter)]
+        )
+        bypass_result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=bypass_filter
+        )
 
-        # The OR filter returns more results, demonstrating the bypass
-        assert len(bypass_results) >= len(legitimate_results)
+        assert len(bypass_result.chunks) >= len(legitimate_result.chunks)
 
-        # Legitimate results must be tenant-a only
-        assert all(c.metadata.get("tenant_id") == "tenant-a" for c in legitimate_results)
+        assert all(c.metadata.get("tenant_id") == "tenant-a" for c in legitimate_result.chunks)
 
 
 # ---------------------------------------------------------------------------
@@ -172,25 +170,22 @@ class TestExhaustiveEnumeration:
     """Attacker uses multiple diverse queries to enumerate all chunks in the store."""
 
     async def test_enumeration_blocked_by_gating(self, shared_vector_index):
-        """Even with many diverse queries, gating limits exposure to the
-        attacker's own tenant's data."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        """Even with many diverse queries, server-side gating limits exposure
+        to the attacker's own tenant's data."""
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
 
-        # Issue queries across all topics with high k
         all_seen_chunks = set()
         all_seen_tenants = set()
 
         for topic in TOPICS:
             query_emb = QUERY_EMBEDDINGS[topic]
             result = await shared_vector_index.query_vector(
-                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
+                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
             )
-            gated = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-            for c in gated:
+            for c in result.chunks:
                 all_seen_chunks.add(c.metadata.get("document_id"))
                 all_seen_tenants.add(c.metadata.get("tenant_id"))
 
-        # Even after exhaustive querying, only tenant-a docs are visible
         assert all_seen_tenants == {"tenant-a"}, f"Enumeration attack saw tenants: {all_seen_tenants}"
 
     async def test_enumeration_without_gating_exposes_all(self, shared_vector_index):
@@ -218,16 +213,18 @@ class TestAdversarialSummary:
 
     async def test_adversarial_summary_table(self, shared_vector_index):
         """Produces a summary table of all adversarial scenarios."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
 
         scenarios = []
 
         # Scenario 1: Targeted confidential extraction
         query_emb = QUERY_EMBEDDINGS["confidential"]
-        result = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
-        ungated_leaked = any(c.metadata.get("tenant_id") != "tenant-a" for c in result.chunks)
-        gated = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-        gated_leaked = any(c.metadata.get("tenant_id") != "tenant-a" for c in gated)
+        ungated = await shared_vector_index.query_vector(embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD)
+        ungated_leaked = any(c.metadata.get("tenant_id") != "tenant-a" for c in ungated.chunks)
+        gated = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
+        )
+        gated_leaked = any(c.metadata.get("tenant_id") != "tenant-a" for c in gated.chunks)
         scenarios.append(("Targeted confidential extraction", ungated_leaked, gated_leaked))
 
         # Scenario 2: Enumeration
@@ -235,33 +232,38 @@ class TestAdversarialSummary:
         gated_tenants = set()
         for topic in TOPICS:
             qe = QUERY_EMBEDDINGS[topic]
-            r = await shared_vector_index.query_vector(embedding=qe, k=TOP_K, score_threshold=SCORE_THRESHOLD)
-            for c in r.chunks:
+            r_ungated = await shared_vector_index.query_vector(embedding=qe, k=TOP_K, score_threshold=SCORE_THRESHOLD)
+            for c in r_ungated.chunks:
                 ungated_tenants.add(c.metadata.get("tenant_id"))
-            for c in r.chunks:
-                if matches_filters(c.metadata, tenant_filter):
-                    gated_tenants.add(c.metadata.get("tenant_id"))
+            r_gated = await shared_vector_index.query_vector(
+                embedding=qe, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
+            )
+            for c in r_gated.chunks:
+                gated_tenants.add(c.metadata.get("tenant_id"))
         scenarios.append(("Exhaustive enumeration", len(ungated_tenants) > 1, len(gated_tenants) > 1))
 
         # Scenario 3: OR-filter bypass
-        bypass_filter = {
-            "type": "or",
-            "filters": [
-                {"type": "eq", "key": "tenant_id", "value": "tenant-a"},
-                {"type": "eq", "key": "tenant_id", "value": "tenant-b"},
+        bypass_filter = CompoundFilter(
+            type="or",
+            filters=[
+                ComparisonFilter(type="eq", key="tenant_id", value="tenant-a"),
+                ComparisonFilter(type="eq", key="tenant_id", value="tenant-b"),
             ],
-        }
-        result = await shared_vector_index.query_vector(
+        )
+        bypass_result = await shared_vector_index.query_vector(
             embedding=QUERY_EMBEDDINGS["revenue"],
             k=TOP_K,
             score_threshold=SCORE_THRESHOLD,
+            filters=bypass_filter,
         )
-        bypass_tenants = {
-            c.metadata.get("tenant_id") for c in result.chunks if matches_filters(c.metadata, bypass_filter)
-        }
-        server_tenants = {
-            c.metadata.get("tenant_id") for c in result.chunks if matches_filters(c.metadata, tenant_filter)
-        }
+        bypass_tenants = {c.metadata.get("tenant_id") for c in bypass_result.chunks}
+        server_result = await shared_vector_index.query_vector(
+            embedding=QUERY_EMBEDDINGS["revenue"],
+            k=TOP_K,
+            score_threshold=SCORE_THRESHOLD,
+            filters=tenant_filter,
+        )
+        server_tenants = {c.metadata.get("tenant_id") for c in server_result.chunks}
         scenarios.append(
             (
                 "Compound OR-filter bypass",

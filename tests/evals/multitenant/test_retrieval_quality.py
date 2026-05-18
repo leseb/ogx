@@ -28,10 +28,11 @@ Run::
 import numpy as np
 import pytest
 
+from ogx_api import ComparisonFilter
+
 from .conftest import (
     QUERY_EMBEDDINGS,
     TOPICS,
-    matches_filters,
 )
 
 TOP_K = 5
@@ -71,22 +72,18 @@ class TestRetrievalQualityUnderGating:
         """Recall@k on authorized docs is the same whether we use a shared gated
         index or a physically separate per-tenant index."""
         query_emb = QUERY_EMBEDDINGS[topic]
-        # The relevant doc for this topic from tenant-a
         relevant_ids = {f"tenant-a-{topic}"}
 
-        # Per-tenant index (ground truth)
         per_tenant_result = await tenant_a_vector_index.query_vector(
             embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
         )
         per_tenant_recall = _recall_at_k(per_tenant_result.chunks, relevant_ids)
 
-        # Shared index with gating
-        shared_result = await shared_vector_index.query_vector(
-            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
+        gated_result = await shared_vector_index.query_vector(
+            embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
         )
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
-        gated_chunks = [c for c in shared_result.chunks if matches_filters(c.metadata, tenant_filter)]
-        gated_recall = _recall_at_k(gated_chunks, relevant_ids)
+        gated_recall = _recall_at_k(gated_result.chunks, relevant_ids)
 
         assert gated_recall >= per_tenant_recall, (
             f"Topic '{topic}': gated recall ({gated_recall:.2f}) should be >= "
@@ -95,7 +92,7 @@ class TestRetrievalQualityUnderGating:
 
     async def test_aggregate_retrieval_metrics(self, shared_vector_index, tenant_a_vector_index):
         """Aggregate recall, precision, and MRR across all topics for both configurations."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
 
         metrics = {
             "ungated": {"recall": [], "precision": [], "mrr": []},
@@ -107,21 +104,20 @@ class TestRetrievalQualityUnderGating:
             query_emb = QUERY_EMBEDDINGS[topic]
             relevant_ids = {f"tenant-a-{topic}"}
 
-            # Ungated (shared index, no filter)
-            result = await shared_vector_index.query_vector(
+            ungated_result = await shared_vector_index.query_vector(
                 embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
             )
-            metrics["ungated"]["recall"].append(_recall_at_k(result.chunks, relevant_ids))
-            metrics["ungated"]["precision"].append(_precision_at_k(result.chunks, relevant_ids))
-            metrics["ungated"]["mrr"].append(_mrr(result.chunks, relevant_ids))
+            metrics["ungated"]["recall"].append(_recall_at_k(ungated_result.chunks, relevant_ids))
+            metrics["ungated"]["precision"].append(_precision_at_k(ungated_result.chunks, relevant_ids))
+            metrics["ungated"]["mrr"].append(_mrr(ungated_result.chunks, relevant_ids))
 
-            # Chunk-level gated
-            gated = [c for c in result.chunks if matches_filters(c.metadata, tenant_filter)]
-            metrics["chunk_gated"]["recall"].append(_recall_at_k(gated, relevant_ids))
-            metrics["chunk_gated"]["precision"].append(_precision_at_k(gated, relevant_ids))
-            metrics["chunk_gated"]["mrr"].append(_mrr(gated, relevant_ids))
+            gated_result = await shared_vector_index.query_vector(
+                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
+            )
+            metrics["chunk_gated"]["recall"].append(_recall_at_k(gated_result.chunks, relevant_ids))
+            metrics["chunk_gated"]["precision"].append(_precision_at_k(gated_result.chunks, relevant_ids))
+            metrics["chunk_gated"]["mrr"].append(_mrr(gated_result.chunks, relevant_ids))
 
-            # Per-tenant index
             pt_result = await tenant_a_vector_index.query_vector(
                 embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
             )
@@ -129,16 +125,12 @@ class TestRetrievalQualityUnderGating:
             metrics["per_tenant"]["precision"].append(_precision_at_k(pt_result.chunks, relevant_ids))
             metrics["per_tenant"]["mrr"].append(_mrr(pt_result.chunks, relevant_ids))
 
-        # Gated recall must be >= ungated recall on authorized docs
-        # (ungated may include unauthorized docs that dilute precision but
-        # recall on authorized docs should not decrease)
         gated_recall = np.mean(metrics["chunk_gated"]["recall"])
         per_tenant_recall = np.mean(metrics["per_tenant"]["recall"])
         assert gated_recall >= per_tenant_recall - 0.01, (
             f"Gated recall ({gated_recall:.4f}) should not be worse than per-tenant recall ({per_tenant_recall:.4f})"
         )
 
-        # Gated precision must be higher than ungated (fewer irrelevant results)
         gated_precision = np.mean(metrics["chunk_gated"]["precision"])
         ungated_precision = np.mean(metrics["ungated"]["precision"])
         assert gated_precision >= ungated_precision, (
@@ -150,17 +142,16 @@ class TestRetrievalQualityPerTopic:
     """Per-topic breakdown for detailed paper tables."""
 
     async def test_per_topic_gated_recall_is_perfect(self, shared_vector_index, tenant_a_vector_index):
-        """Every topic achieves perfect recall under gating."""
-        tenant_filter = {"type": "eq", "key": "tenant_id", "value": "tenant-a"}
+        """Every topic achieves perfect recall under server-side gating."""
+        tenant_filter = ComparisonFilter(type="eq", key="tenant_id", value="tenant-a")
 
         for topic in TOPICS:
             query_emb = QUERY_EMBEDDINGS[topic]
             relevant_ids = {f"tenant-a-{topic}"}
 
-            shared_result = await shared_vector_index.query_vector(
-                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD
+            gated_result = await shared_vector_index.query_vector(
+                embedding=query_emb, k=TOP_K, score_threshold=SCORE_THRESHOLD, filters=tenant_filter
             )
-            gated = [c for c in shared_result.chunks if matches_filters(c.metadata, tenant_filter)]
 
-            recall = _recall_at_k(gated, relevant_ids)
+            recall = _recall_at_k(gated_result.chunks, relevant_ids)
             assert recall == 1.0, f"Topic '{topic}': gated recall should be 1.0, got {recall:.4f}"
