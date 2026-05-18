@@ -170,7 +170,13 @@ class BuiltinInteractionsImpl(Interactions):
                     "Cannot chain from a non-existent interaction."
                 )
             messages: list[dict[str, Any]] = list(stored["messages"])
-            messages.append({"role": "assistant", "content": stored["output_text"]})
+            # Use the full assistant message (with tool_calls) when available,
+            # falling back to text-only for interactions stored before this fix.
+            output_message = stored.get("output_message")
+            if output_message is not None:
+                messages.append(output_message)
+            else:
+                messages.append({"role": "assistant", "content": stored["output_text"]})
             messages.extend(self._convert_input_to_openai(None, request.input))
             return messages
 
@@ -501,6 +507,34 @@ class BuiltinInteractionsImpl(Interactions):
 
     # -- Response translation --
 
+    @staticmethod
+    def _build_output_message(response: OpenAIChatCompletion) -> dict[str, Any]:
+        """Build the full OpenAI-format assistant message dict from a completion.
+
+        The returned dict always has ``role: assistant`` and includes
+        ``tool_calls`` when the model invoked tools, so that
+        ``previous_interaction_id`` chaining replays the full turn.
+        """
+        msg: dict[str, Any] = {"role": "assistant"}
+        if response.choices:
+            message = response.choices[0].message
+            if message:
+                msg["content"] = message.content
+                if message.tool_calls:
+                    msg["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in message.tool_calls
+                        if hasattr(tc, "function") and tc.function is not None
+                    ]
+        return msg
+
     async def _openai_to_google(
         self,
         response: OpenAIChatCompletion,
@@ -550,12 +584,17 @@ class BuiltinInteractionsImpl(Interactions):
                 output_text = o.text
                 break
 
+        # Build the full assistant message for storage so that
+        # previous_interaction_id can replay tool-calling turns.
+        output_message = self._build_output_message(response)
+
         await self.store.store_interaction(
             interaction_id=interaction_id,
             created_at=_now_epoch(),
             model=request_model,
             messages=messages,
             output_text=output_text,
+            output_message=output_message,
         )
 
         return GoogleInteractionResponse(
@@ -592,6 +631,8 @@ class BuiltinInteractionsImpl(Interactions):
         collected_text: list[str] = []
         tool_call_blocks: dict[int, bool] = {}  # tc_index -> started
         tool_call_index_to_block_index: dict[int, int] = {}
+        # Collect streamed tool call data for storage
+        collected_tool_calls: dict[int, dict[str, Any]] = {}  # tc_index -> {id, name, arguments_parts}
         output_tokens = 0
         input_tokens = 0
 
@@ -631,18 +672,28 @@ class BuiltinInteractionsImpl(Interactions):
                         # Start new function_call block
                         tool_call_blocks[tc_idx] = True
                         tool_call_index_to_block_index[tc_idx] = content_block_index
+                        tc_id = tc_delta.id or f"call_{uuid.uuid4().hex[:24]}"
+                        tc_name = tc_delta.function.name if tc_delta.function and tc_delta.function.name else ""
+
+                        # Initialize collection for this tool call
+                        collected_tool_calls[tc_idx] = {
+                            "id": tc_id,
+                            "name": tc_name,
+                            "arguments_parts": [],
+                        }
 
                         yield ContentStartEvent(
                             index=content_block_index,
                             content=_FunctionCallContentRef(
-                                id=tc_delta.id or f"call_{uuid.uuid4().hex[:24]}",
-                                name=tc_delta.function.name if tc_delta.function and tc_delta.function.name else None,
+                                id=tc_id,
+                                name=tc_name or None,
                             ),
                         )
                         content_block_index += 1
 
                     if tc_delta.function and tc_delta.function.arguments:
                         block_idx = tool_call_index_to_block_index[tc_idx]
+                        collected_tool_calls[tc_idx]["arguments_parts"].append(tc_delta.function.arguments)
                         yield ContentDeltaEvent(
                             index=block_idx,
                             delta=_FunctionCallDelta(args=tc_delta.function.arguments),
@@ -659,6 +710,22 @@ class BuiltinInteractionsImpl(Interactions):
         for _tc_idx, block_idx in tool_call_index_to_block_index.items():
             yield ContentStopEvent(index=block_idx)
 
+        # Build the full assistant message for storage so that
+        # previous_interaction_id can replay tool-calling turns.
+        output_message: dict[str, Any] = {"role": "assistant", "content": "".join(collected_text) or None}
+        if collected_tool_calls:
+            output_message["tool_calls"] = [
+                {
+                    "id": tc_data["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc_data["name"],
+                        "arguments": "".join(tc_data["arguments_parts"]),
+                    },
+                }
+                for tc_data in collected_tool_calls.values()
+            ]
+
         # Store the interaction for conversation chaining
         await self.store.store_interaction(
             interaction_id=interaction_id,
@@ -666,6 +733,7 @@ class BuiltinInteractionsImpl(Interactions):
             model=request_model,
             messages=messages,
             output_text="".join(collected_text),
+            output_message=output_message,
         )
 
         # Final event

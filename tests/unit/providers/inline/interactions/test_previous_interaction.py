@@ -115,11 +115,156 @@ class TestPreviousInteractionId:
         assert call_kwargs["messages"] == messages
         assert call_kwargs["output_text"] == "Hello world"
 
+    async def test_chaining_with_tool_calls_uses_output_message(self, impl):
+        """Chaining includes tool_calls from the prior assistant turn."""
+        stored_data = {
+            "messages": [
+                {"role": "user", "content": "What is the weather in Paris?"},
+            ],
+            "output_text": "",
+            "output_message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_abc123",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"location": "Paris"}',
+                        },
+                    }
+                ],
+            },
+        }
+        impl.store.get_interaction = AsyncMock(return_value=stored_data)
+
+        request = GoogleCreateInteractionRequest(
+            model="m",
+            input="Never mind, how about London?",
+            previous_interaction_id="interaction-tool",
+        )
+        messages = await impl._build_messages(request)
+
+        assert len(messages) == 3
+        assert messages[0] == {"role": "user", "content": "What is the weather in Paris?"}
+        # The assistant message must carry tool_calls, not just text
+        assert messages[1]["role"] == "assistant"
+        assert messages[1]["content"] is None
+        assert len(messages[1]["tool_calls"]) == 1
+        assert messages[1]["tool_calls"][0]["function"]["name"] == "get_weather"
+        assert messages[2] == {"role": "user", "content": "Never mind, how about London?"}
+
+    async def test_chaining_falls_back_to_output_text_when_no_output_message(self, impl):
+        """Legacy stored interactions without output_message still work."""
+        stored_data = {
+            "messages": [
+                {"role": "user", "content": "Hi"},
+            ],
+            "output_text": "Hello there!",
+            # No output_message key -- legacy format
+        }
+        impl.store.get_interaction = AsyncMock(return_value=stored_data)
+
+        request = GoogleCreateInteractionRequest(
+            model="m",
+            input="How are you?",
+            previous_interaction_id="interaction-legacy",
+        )
+        messages = await impl._build_messages(request)
+
+        assert len(messages) == 3
+        assert messages[1] == {"role": "assistant", "content": "Hello there!"}
+
+    async def test_non_streaming_stores_output_message_with_tool_calls(self, impl):
+        """Non-streaming responses store the full assistant message including tool_calls."""
+        openai_resp = MagicMock()
+        openai_resp.choices = [MagicMock()]
+        openai_resp.choices[0].message = MagicMock()
+        openai_resp.choices[0].message.content = None
+        tc = MagicMock()
+        tc.id = "call_xyz"
+        tc.function = MagicMock()
+        tc.function.name = "get_weather"
+        tc.function.arguments = '{"location": "Paris"}'
+        openai_resp.choices[0].message.tool_calls = [tc]
+        openai_resp.choices[0].finish_reason = "tool_calls"
+        openai_resp.usage = MagicMock()
+        openai_resp.usage.prompt_tokens = 10
+        openai_resp.usage.completion_tokens = 5
+
+        messages = [{"role": "user", "content": "Weather in Paris?"}]
+        await impl._openai_to_google(openai_resp, "m", messages)
+
+        call_kwargs = impl.store.store_interaction.call_args.kwargs
+        output_msg = call_kwargs["output_message"]
+        assert output_msg["role"] == "assistant"
+        assert len(output_msg["tool_calls"]) == 1
+        assert output_msg["tool_calls"][0]["id"] == "call_xyz"
+        assert output_msg["tool_calls"][0]["function"]["name"] == "get_weather"
+
+    async def test_streaming_stores_output_message_with_tool_calls(self, impl):
+        """Streaming responses store the full assistant message including tool_calls."""
+        chunks = []
+
+        # First chunk: tool call start
+        tc_delta_start = MagicMock()
+        tc_delta_start.index = 0
+        tc_delta_start.id = "call_stream_abc"
+        tc_delta_start.function = MagicMock()
+        tc_delta_start.function.name = "search"
+        tc_delta_start.function.arguments = '{"q":'
+
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock()]
+        chunk1.choices[0].delta = MagicMock()
+        chunk1.choices[0].delta.content = None
+        chunk1.choices[0].delta.tool_calls = [tc_delta_start]
+        chunk1.choices[0].finish_reason = None
+        chunk1.usage = None
+        chunks.append(chunk1)
+
+        # Second chunk: tool call arguments continuation
+        tc_delta_args = MagicMock()
+        tc_delta_args.index = 0
+        tc_delta_args.id = None
+        tc_delta_args.function = MagicMock()
+        tc_delta_args.function.name = None
+        tc_delta_args.function.arguments = ' "hello"}'
+
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock()]
+        chunk2.choices[0].delta = MagicMock()
+        chunk2.choices[0].delta.content = None
+        chunk2.choices[0].delta.tool_calls = [tc_delta_args]
+        chunk2.choices[0].finish_reason = None
+        chunk2.usage = None
+        chunks.append(chunk2)
+
+        async def mock_stream():
+            for c in chunks:
+                yield c
+
+        messages = [{"role": "user", "content": "Search for hello"}]
+        events = []
+        async for event in impl._stream_openai_to_google(mock_stream(), "m", messages):
+            events.append(event)
+
+        call_kwargs = impl.store.store_interaction.call_args.kwargs
+        output_msg = call_kwargs["output_message"]
+        assert output_msg["role"] == "assistant"
+        assert output_msg["content"] is None  # No text content
+        assert len(output_msg["tool_calls"]) == 1
+        assert output_msg["tool_calls"][0]["id"] == "call_stream_abc"
+        assert output_msg["tool_calls"][0]["function"]["name"] == "search"
+        assert output_msg["tool_calls"][0]["function"]["arguments"] == '{"q": "hello"}'
+
     async def test_multi_hop_chaining(self, impl):
         """Chain through multiple interactions preserving full history."""
         first_stored = {
             "messages": [{"role": "user", "content": "Hi"}],
             "output_text": "Hello!",
+            "output_message": {"role": "assistant", "content": "Hello!"},
         }
 
         impl.store.get_interaction = AsyncMock(return_value=first_stored)
@@ -139,6 +284,7 @@ class TestPreviousInteractionId:
         second_stored = {
             "messages": messages2,
             "output_text": "I'm doing well!",
+            "output_message": {"role": "assistant", "content": "I'm doing well!"},
         }
         impl.store.get_interaction = AsyncMock(return_value=second_stored)
 

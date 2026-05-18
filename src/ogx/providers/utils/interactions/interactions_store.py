@@ -51,18 +51,28 @@ class InteractionsStore:
         model: str,
         messages: list[dict[str, Any]],
         output_text: str,
+        output_message: dict[str, Any] | None = None,
     ) -> None:
-        """Persist a completed interaction for future chaining."""
+        """Persist a completed interaction for future chaining.
+
+        ``output_message`` is the full OpenAI-format assistant message dict
+        (including ``tool_calls`` when present).  It is stored alongside the
+        legacy ``output_text`` field so that ``_build_messages`` can
+        reconstruct tool-calling turns faithfully.
+        """
+        data: dict[str, Any] = {
+            "messages": messages,
+            "output_text": output_text,
+        }
+        if output_message is not None:
+            data["output_message"] = output_message
         await self.sql_store.insert(
             self.reference.table_name,
             {
                 "id": interaction_id,
                 "created_at": created_at,
                 "model": model,
-                "interaction_data": {
-                    "messages": messages,
-                    "output_text": output_text,
-                },
+                "interaction_data": data,
             },
         )
 
