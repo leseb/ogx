@@ -278,19 +278,30 @@ class ReferenceBatchesImpl(Batches):
 
     async def cancel_batch(self, request: CancelBatchRequest) -> BatchObject:
         """Cancel a batch that is in progress."""
-        batch = await self.retrieve_batch(RetrieveBatchRequest(batch_id=request.batch_id))
+        terminal_statuses = {"completed", "failed", "expired"}
+        cancel_statuses = {"cancelled", "cancelling"}
 
-        if batch.status in ["cancelled", "cancelling"]:
-            return batch
+        async with self._update_batch_lock:
+            batch = await self.retrieve_batch(RetrieveBatchRequest(batch_id=request.batch_id))
 
-        if batch.status in ["completed", "failed", "expired"]:
-            raise ConflictError(f"Cannot cancel batch '{request.batch_id}' with status '{batch.status}'")
+            if batch.status in cancel_statuses:
+                return batch
 
-        await self._update_batch(request.batch_id, status="cancelling", cancelling_at=int(time.time()))
+            if batch.status in terminal_statuses:
+                raise ConflictError(f"Cannot cancel batch '{request.batch_id}' with status '{batch.status}'")
+
+            batch_dict = batch.model_dump()
+            batch_dict["status"] = "cancelling"
+            batch_dict["cancelling_at"] = int(time.time())
+
+            await self.sql_store.update(
+                table=TABLE_BATCHES,
+                data={"status": "cancelling", "batch_data": batch_dict},
+                where={"id": request.batch_id},
+            )
 
         if request.batch_id in self._processing_tasks:
             self._processing_tasks[request.batch_id].cancel()
-            # note: task removal and status="cancelled" handled in finally block of _process_batch
 
         return await self.retrieve_batch(RetrieveBatchRequest(batch_id=request.batch_id))
 
@@ -340,11 +351,23 @@ class ReferenceBatchesImpl(Batches):
 
     async def _update_batch(self, batch_id: str, **updates) -> None:
         """Update batch fields in SQL store."""
+        terminal_statuses = {"completed", "failed", "expired", "cancelled"}
+
         async with self._update_batch_lock:
             try:
                 batch = await self.retrieve_batch(RetrieveBatchRequest(batch_id=batch_id))
 
-                # batch processing is async. once cancelling, only allow "cancelled" status updates
+                # Once a batch reaches a terminal state, reject all further updates
+                if batch.status in terminal_statuses:
+                    logger.info(
+                        "Skipping update for batch in terminal state",
+                        batch_id=batch_id,
+                        current_status=batch.status,
+                        attempted_status=updates.get("status"),
+                    )
+                    return
+
+                # Once cancelling, only allow "cancelled" status updates
                 if batch.status == "cancelling" and updates.get("status") != "cancelled":
                     logger.info(
                         "Skipping status update for cancelled batch",

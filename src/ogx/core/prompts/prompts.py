@@ -4,6 +4,7 @@
 # This source code is licensed under the terms described in the LICENSE file in
 # the root directory of this source tree.
 
+import asyncio
 import time
 from typing import Any
 
@@ -56,12 +57,18 @@ class PromptServiceImpl(Prompts):
         self.config = config
         self.deps = deps
         self.policy = config.policy
+        self._prompt_locks: dict[str, asyncio.Lock] = {}
 
         prompts_ref = config.config.storage.stores.prompts
         if not prompts_ref:
             raise ServiceNotEnabledError("storage.stores.prompts")
 
         self._prompts_ref = prompts_ref
+
+    def _get_prompt_lock(self, prompt_id: str) -> asyncio.Lock:
+        if prompt_id not in self._prompt_locks:
+            self._prompt_locks[prompt_id] = asyncio.Lock()
+        return self._prompt_locks[prompt_id]
 
     async def initialize(self) -> None:
         self.sql_store = await authorized_sqlstore(self._prompts_ref, self.policy)
@@ -143,39 +150,40 @@ class PromptServiceImpl(Prompts):
             raise ValueError("Version must be >= 1")
         variables = request.variables if request.variables is not None else []
 
-        prompt_versions = await self.list_prompt_versions(ListPromptVersionsRequest(prompt_id=request.prompt_id))
-        latest_prompt = max(prompt_versions.data, key=lambda x: int(x.version))
+        async with self._get_prompt_lock(request.prompt_id):
+            prompt_versions = await self.list_prompt_versions(ListPromptVersionsRequest(prompt_id=request.prompt_id))
+            latest_prompt = max(prompt_versions.data, key=lambda x: int(x.version))
 
-        if request.version and latest_prompt.version != request.version:
-            raise ValueError(
-                f"'{request.version}' is not the latest prompt version for prompt_id='{request.prompt_id}'. Use the latest version '{latest_prompt.version}' in request."
+            if request.version and latest_prompt.version != request.version:
+                raise ValueError(
+                    f"'{request.version}' is not the latest prompt version for prompt_id='{request.prompt_id}'. Use the latest version '{latest_prompt.version}' in request."
+                )
+
+            current_version = latest_prompt.version if request.version is None else request.version
+            new_version = current_version + 1
+            created_at = int(time.time())
+
+            updated_prompt = Prompt(
+                prompt_id=request.prompt_id, prompt=request.prompt, version=new_version, variables=variables
             )
 
-        current_version = latest_prompt.version if request.version is None else request.version
-        new_version = current_version + 1
-        created_at = int(time.time())
-
-        updated_prompt = Prompt(
-            prompt_id=request.prompt_id, prompt=request.prompt, version=new_version, variables=variables
-        )
-
-        await self.sql_store.insert(
-            table=TABLE_PROMPTS,
-            data={
-                "id": f"{request.prompt_id}:{new_version}",
-                "prompt_id": request.prompt_id,
-                "version": new_version,
-                "is_default": False,
-                "created_at": created_at,
-                "prompt_data": {
-                    "prompt": request.prompt,
-                    "variables": variables,
+            await self.sql_store.insert(
+                table=TABLE_PROMPTS,
+                data={
+                    "id": f"{request.prompt_id}:{new_version}",
+                    "prompt_id": request.prompt_id,
+                    "version": new_version,
+                    "is_default": False,
+                    "created_at": created_at,
+                    "prompt_data": {
+                        "prompt": request.prompt,
+                        "variables": variables,
+                    },
                 },
-            },
-        )
+            )
 
-        if request.set_as_default:
-            await self.set_default_version(SetDefaultVersionRequest(prompt_id=request.prompt_id, version=new_version))
+            if request.set_as_default:
+                await self._set_default_version_locked(request.prompt_id, new_version)
 
         return updated_prompt
 
@@ -201,31 +209,33 @@ class PromptServiceImpl(Prompts):
 
     async def set_default_version(self, request: SetDefaultVersionRequest) -> Prompt:
         """Set which version of a prompt should be the default."""
+        async with self._get_prompt_lock(request.prompt_id):
+            return await self._set_default_version_locked(request.prompt_id, request.version)
+
+    async def _set_default_version_locked(self, prompt_id: str, version: int) -> Prompt:
+        """Set the default version for a prompt. Caller must hold the prompt lock."""
         record = await self.sql_store.fetch_one(
             table=TABLE_PROMPTS,
-            where={"prompt_id": request.prompt_id, "version": request.version},
+            where={"prompt_id": prompt_id, "version": version},
         )
         if record is None:
-            raise ValueError(f"Prompt {request.prompt_id} version {request.version} not found")
+            raise ValueError(f"Prompt {prompt_id} version {version} not found")
 
-        # Clear all defaults first, then set the target. This avoids the race where
-        # two concurrent calls interleave "set" and "clear" and remove each other's
-        # target, leaving zero defaults.
         all_versions = await self.sql_store.fetch_all(
             table=TABLE_PROMPTS,
-            where={"prompt_id": request.prompt_id, "is_default": True},
+            where={"prompt_id": prompt_id, "is_default": True},
         )
         for row in all_versions.data:
             await self.sql_store.update(
                 table=TABLE_PROMPTS,
                 data={"is_default": False},
-                where={"prompt_id": request.prompt_id, "version": row["version"]},
+                where={"prompt_id": prompt_id, "version": row["version"]},
             )
 
         await self.sql_store.update(
             table=TABLE_PROMPTS,
             data={"is_default": True},
-            where={"prompt_id": request.prompt_id, "version": request.version},
+            where={"prompt_id": prompt_id, "version": version},
         )
 
         return self._row_to_prompt(record, is_default=True)

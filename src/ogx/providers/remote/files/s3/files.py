@@ -253,8 +253,6 @@ class S3FilesImpl(Files):
             "expires_at": expires_at,
         }
 
-        await self.sql_store.insert("openai_files", entry)
-
         try:
             await asyncio.to_thread(
                 self.client.put_object,
@@ -264,9 +262,17 @@ class S3FilesImpl(Files):
                 # TODO: enable server-side encryption
             )
         except ClientError as e:
-            await self.sql_store.delete("openai_files", where={"id": file_id})
-
             raise RuntimeError(f"Failed to upload file to S3: {e}") from e
+
+        try:
+            await self.sql_store.insert("openai_files", entry)
+        except Exception as e:
+            await asyncio.to_thread(
+                self.client.delete_object,
+                Bucket=self._config.bucket_name,
+                Key=file_id,
+            )
+            raise RuntimeError(f"Failed to register uploaded file: {e}") from e
 
         return _make_file_object(**entry)
 

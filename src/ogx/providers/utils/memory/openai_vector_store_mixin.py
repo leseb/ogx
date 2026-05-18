@@ -160,6 +160,7 @@ class OpenAIVectorStoreMixin(ABC):
         self._last_file_batch_cleanup_time = 0
         self._file_batch_tasks: dict[str, asyncio.Task[None]] = {}
         self._vector_store_locks: dict[str, asyncio.Lock] = {}
+        self._in_flight_attachments: set[tuple[str, str]] = set()
 
     def _get_vector_store_lock(self, vector_store_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific vector store."""
@@ -1226,15 +1227,27 @@ class OpenAIVectorStoreMixin(ABC):
         if vector_store_id not in self.openai_vector_stores:
             raise VectorStoreNotFoundError(vector_store_id)
 
-        # Check if file is already attached to this vector store
-        store_info = self.openai_vector_stores[vector_store_id]
-        if file_id in store_info["file_ids"]:
-            logger.warning(
-                "File is already attached to vector store, skipping", file_id=file_id, vector_store_id=vector_store_id
-            )
-            # Return existing file object
-            file_info = await self._load_openai_vector_store_file(vector_store_id, file_id)
-            return VectorStoreFileObject(**file_info)
+        # Check if file is already attached or being attached under the lock
+        async with self._get_vector_store_lock(vector_store_id):
+            store_info = self.openai_vector_stores[vector_store_id]
+            if file_id in store_info["file_ids"]:
+                logger.warning(
+                    "File is already attached to vector store, skipping",
+                    file_id=file_id,
+                    vector_store_id=vector_store_id,
+                )
+                file_info = await self._load_openai_vector_store_file(vector_store_id, file_id)
+                return VectorStoreFileObject(**file_info)
+
+            attach_key = (vector_store_id, file_id)
+            if attach_key in self._in_flight_attachments:
+                logger.warning(
+                    "File attachment already in progress, skipping",
+                    file_id=file_id,
+                    vector_store_id=vector_store_id,
+                )
+                raise ValueError(f"File '{file_id}' is already being attached to vector store '{vector_store_id}'")
+            self._in_flight_attachments.add(attach_key)
 
         attributes = request.attributes or {}
         chunking_strategy = request.chunking_strategy or VectorStoreChunkingStrategyAuto()
@@ -1254,6 +1267,7 @@ class OpenAIVectorStoreMixin(ABC):
         )
 
         if not self.files_api:
+            self._in_flight_attachments.discard((vector_store_id, file_id))
             vector_store_file_object.status = "failed"
             vector_store_file_object.last_error = VectorStoreFileLastError(
                 code="server_error",
@@ -1401,6 +1415,8 @@ class OpenAIVectorStoreMixin(ABC):
         # Update file_ids and file_counts in vector store metadata
         # Use lock to prevent race condition when multiple files are attached concurrently
         async with self._get_vector_store_lock(vector_store_id):
+            self._in_flight_attachments.discard((vector_store_id, file_id))
+
             store_info = self.openai_vector_stores[vector_store_id].copy()
             # Deep copy file_counts to avoid mutating shared dict
             store_info["file_counts"] = store_info["file_counts"].copy()
