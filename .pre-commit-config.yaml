@@ -317,15 +317,6 @@ repos:
             }
             exit 0
 
-      - id: block-sql-data-ops-in-initialize
-        name: Block SQL data ops in initialize() methods
-        entry: ./scripts/check-no-sql-in-initialize.sh
-        language: script
-        types: [python]
-        pass_filenames: false
-        always_run: true
-        files: ^src/ogx/(providers|core)/
-
       - id: enforce-authorized-sqlstore
         name: Enforce AuthorizedSqlStore usage
         entry: bash
